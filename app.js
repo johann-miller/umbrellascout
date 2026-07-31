@@ -425,7 +425,7 @@ let radarFrames = [];
 let radarFrameIndex = 0;
 let radarAnimTimer = null;
 const RADAR_FRAME_MS = 350;
-const RADAR_OVERLAP_MS = 100; // how long incoming/outgoing frames stay stacked before outgoing is hidden
+const RADAR_OVERLAP_MS = 200; // how long incoming/outgoing frames stay stacked before outgoing is hidden
 
 /* Maps frame timestamp → Map(tile URL → object URL). IEM sends no
    Cache-Control on WMS tiles, so without this the animation loop
