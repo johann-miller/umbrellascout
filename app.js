@@ -416,17 +416,22 @@ function renderDailyStrip(periods) {
 
 /* ── Radar ─────────────────────────────────────────── */
 let radarMap = null;
-let radarLayer = null;
+let radarLayerA = null;
+let radarLayerB = null;
+let radarActiveLayer = null; // whichever of A/B is currently opacity:1
+let radarTransitioning = false;
 let radarPlaying = true;
 let radarFrames = [];
 let radarFrameIndex = 0;
 let radarAnimTimer = null;
+const RADAR_FRAME_MS = 350;
+const RADAR_OVERLAP_MS = 100; // how long incoming/outgoing frames stay stacked before outgoing is hidden
 
 /* Maps frame timestamp → Map(tile URL → object URL). IEM sends no
    Cache-Control on WMS tiles, so without this the animation loop
-   (every 700ms, 25 distinct timestamps) re-requests every visible
-   tile from the network continuously. Cache each tile once per
-   timestamp and reuse it on subsequent loop passes. */
+   re-requests every visible tile from the network continuously.
+   Cache each tile once per timestamp and reuse it on subsequent
+   loop passes. Shared by both layer instances below. */
 let radarTileCache = new Map();
 
 const CachedWMS = L.TileLayer.WMS.extend({
@@ -439,13 +444,21 @@ const CachedWMS = L.TileLayer.WMS.extend({
       tsCache = new Map();
       radarTileCache.set(ts, tsCache);
     }
+    // Wait for the actual decode/paint, not just src assignment — a cached
+    // blob URL still needs the browser to load it into this new <img>
+    // element, and skipping that wait is what caused the blank flash.
+    tile.onload = () => done(null, tile);
+    tile.onerror = () => done(new Error('radar tile failed to load'), tile);
+
     const cached = tsCache.get(url);
     if (cached) {
       tile.src = cached;
-      setTimeout(() => done(null, tile), 0);
       return tile;
     }
-    fetch(url)
+    // A stalled (not refused) connection never resolves fetch() on its own;
+    // without a timeout that would leave this tile "loading" forever and
+    // permanently wedge the crossfade that waits on the layer's load event.
+    fetch(url, { signal: AbortSignal.timeout(10000) })
       .then(res => {
         if (!res.ok) throw new Error(`radar tile ${res.status}`);
         return res.blob();
@@ -454,9 +467,11 @@ const CachedWMS = L.TileLayer.WMS.extend({
         const objUrl = URL.createObjectURL(blob);
         tsCache.set(url, objUrl);
         tile.src = objUrl;
-        done(null, tile);
       })
-      .catch(err => done(err, tile));
+      .catch(err => {
+        tile.onload = tile.onerror = null;
+        done(err, tile);
+      });
     return tile;
   }
 });
@@ -475,14 +490,19 @@ function initRadar(cfg) {
     maxZoom: 19,
   }).addTo(radarMap);
 
-  radarLayer = new CachedWMS(
-    'https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi',
-    {
-      format: 'image/png',
-      transparent: true,
-      layers: 'nexrad-n0q-wmst',
-    }
-  ).addTo(radarMap);
+  // Two overlapping WMS layers: the incoming frame loads fully hidden
+  // (opacity 0) on top of the visible one. Once loaded it's revealed
+  // instantly and held stacked over the outgoing frame briefly before
+  // the outgoing one is hidden, so there's never a gap with neither painted.
+  const wmsOptions = {
+    format: 'image/png',
+    transparent: true,
+    layers: 'nexrad-n0q-wmst',
+  };
+  const wmsUrl = 'https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi';
+  radarLayerA = new CachedWMS(wmsUrl, { ...wmsOptions, opacity: 1 }).addTo(radarMap);
+  radarLayerB = new CachedWMS(wmsUrl, { ...wmsOptions, opacity: 0 }).addTo(radarMap);
+  radarActiveLayer = radarLayerA;
 
   buildRadarFrames();
   startRadarLoop();
@@ -515,7 +535,7 @@ function animateRadar() {
   if (!radarPlaying) return;
   showRadarFrame(radarFrameIndex);
   radarFrameIndex = (radarFrameIndex + 1) % radarFrames.length;
-  radarAnimTimer = setTimeout(animateRadar, 700);
+  radarAnimTimer = setTimeout(animateRadar, RADAR_FRAME_MS);
 }
 
 // Shows the most recent frame immediately, then starts the oldest→newest
@@ -526,9 +546,8 @@ function startRadarLoop() {
     clearTimeout(radarAnimTimer);
     radarAnimTimer = null;
   }
-  showRadarFrame(radarFrames.length - 1);
-  radarLayer.off('load');
-  radarLayer.once('load', () => {
+  radarTransitioning = false;
+  showRadarFrame(radarFrames.length - 1, () => {
     radarFrameIndex = 0;
     if (radarPlaying) animateRadar();
   });
@@ -536,17 +555,54 @@ function startRadarLoop() {
 
 let lastRadarTimestamp = null;
 
-function showRadarFrame(index) {
+function showRadarFrame(index, onReady) {
   const ts = radarFrames[index];
-  if (!ts) return;
-  if (ts !== lastRadarTimestamp) {
-    radarLayer.setParams({ time: ts });
-    lastRadarTimestamp = ts;
+  if (!ts || ts === lastRadarTimestamp || radarTransitioning) {
+    onReady?.();
+    return;
   }
-  const tsEl = document.getElementById('radar-timestamp');
-  if (tsEl) {
-    tsEl.textContent = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-  }
+  radarTransitioning = true;
+  lastRadarTimestamp = ts;
+
+  const incoming = radarActiveLayer === radarLayerA ? radarLayerB : radarLayerA;
+  const outgoing = radarActiveLayer;
+
+  let hadError = false;
+  const onTileError = () => { hadError = true; };
+  incoming.off('load');
+  incoming.off('tileerror', onTileError);
+  incoming.on('tileerror', onTileError);
+  incoming.once('load', () => {
+    incoming.off('tileerror', onTileError);
+
+    if (hadError) {
+      // Leave the incoming layer hidden and keep showing the outgoing
+      // (last-good) frame — per SPEC.md, a failure falls back to the last
+      // successfully cached value rather than replacing it with a blank one.
+      radarTransitioning = false;
+      updatePanelStatus('radar', false, 'IEM tile error');
+      onReady?.();
+      return;
+    }
+
+    // Reveal the fully-painted incoming frame instantly, on top of the
+    // still-visible outgoing one, then hold both stacked briefly before
+    // dropping the outgoing frame — no opacity animation on either edge,
+    // just a short overlap so there's never a gap with neither painted.
+    incoming.setOpacity(1);
+    radarActiveLayer = incoming;
+    updatePanelStatus('radar', true);
+    const tsEl = document.getElementById('radar-timestamp');
+    if (tsEl) {
+      tsEl.textContent = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    setTimeout(() => {
+      outgoing.setOpacity(0);
+      radarTransitioning = false;
+      onReady?.();
+    }, RADAR_OVERLAP_MS);
+  });
+  incoming.setParams({ time: ts });
 }
 
 function toggleRadarPlay() {
@@ -560,7 +616,6 @@ function toggleRadarPlay() {
 async function refreshRadarFrames() {
   buildRadarFrames();
   if (radarPlaying) startRadarLoop();
-  updatePanelStatus('radar', true);
 }
 
 /* ── Header clock ──────────────────────────────────── */
