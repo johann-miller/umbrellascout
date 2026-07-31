@@ -113,11 +113,11 @@ function getAllLogs() {
 }
 
 /* ── Retry with exponential backoff ────────────────── */
-const BACKOFF_BASE = 10000;
+const BACKOFF_DELAYS = [0, 10000, 30000, 60000];
 const BACKOFF_MAX = 300000;
 
 function backoffDelay(retryCount) {
-  return Math.min(BACKOFF_BASE * Math.pow(3, retryCount), BACKOFF_MAX);
+  return Math.min(BACKOFF_DELAYS[retryCount] ?? BACKOFF_MAX, BACKOFF_MAX);
 }
 
 /* ── Panel state tracking ──────────────────────────── */
@@ -233,13 +233,46 @@ function sleep(ms) {
 
 /* ── Grid point resolution ─────────────────────────── */
 let cachedGrid = null;
+let cachedStationUrl = null;
+let cachedGridKey = '';
+
+function gridKey(cfg) {
+  return `${cfg.lat.toFixed(4)},${cfg.lon.toFixed(4)}`;
+}
+
+function loadCachedGrid(cfg) {
+  try {
+    const raw = localStorage.getItem('cachedGrid');
+    const key = cfg ? gridKey(cfg) : '';
+    if (raw && key) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.wfo && parsed.x != null && parsed.y != null && parsed.key === key) {
+        cachedGrid = parsed;
+        cachedStationUrl = parsed.stationUrl || null;
+        cachedGridKey = key;
+        return;
+      }
+    }
+  } catch (_) { /* ignore */ }
+  cachedGrid = null;
+  cachedStationUrl = null;
+  cachedGridKey = '';
+}
+
+function saveCachedGrid(cfg) {
+  if (!cachedGrid) return;
+  cachedGrid.key = gridKey(cfg);
+  localStorage.setItem('cachedGrid', JSON.stringify(cachedGrid));
+}
 
 async function resolveGridPoint(cfg) {
-  if (cachedGrid) return cachedGrid;
+  const key = gridKey(cfg);
+  if (cachedGrid && cachedGridKey === key) return cachedGrid;
   const data = await nwsFetch(`${NWS_BASE}/points/${cfg.lat},${cfg.lon}`);
   if (data && data.properties) {
     const grid = data.properties;
-    cachedGrid = { wfo: grid.forecastGrid.split('/').pop(), x: grid.gridX, y: grid.gridY };
+    cachedGrid = { wfo: grid.gridId, x: grid.gridX, y: grid.gridY, stationUrl: grid.observationStations };
+    saveCachedGrid(cfg);
     const updated = { ...cfg, wfo: cachedGrid.wfo, x: cachedGrid.x, y: cachedGrid.y };
     writeLocationCookie(updated);
     return cachedGrid;
@@ -249,14 +282,13 @@ async function resolveGridPoint(cfg) {
 
 /* ── Current conditions (via observations) ──────────── */
 async function fetchCurrentConditions(cfg) {
-  const data = await nwsFetch(`${NWS_BASE}/points/${cfg.lat},${cfg.lon}/observation`);
-  if (!data) return;
-  const obsUrl = data.properties?.observationStations;
-  if (!obsUrl) return;
-  const match = obsUrl.match(/(\w+)$/);
-  if (!match) return;
-  const station = match[1];
-  const obs = await nwsFetch(`${NWS_BASE}/stations/${station}/observations/latest`);
+  await resolveGridPoint(cfg);
+  const stationsUrl = cachedStationUrl;
+  if (!stationsUrl) return;
+  const stations = await nwsFetch(stationsUrl);
+  if (!stations || !stations.features?.length) return;
+  const stationId = stations.features[0].id.split('/').pop();
+  const obs = await nwsFetch(`${NWS_BASE}/stations/${stationId}/observations/latest`);
   if (!obs || !obs.features?.length) return;
   await fadeUpdate('current', () => renderCurrentConditions(obs.features[0].properties));
 }
@@ -264,12 +296,12 @@ async function fetchCurrentConditions(cfg) {
 function renderCurrentConditions(props) {
   const el = document.getElementById('current-conditions');
   if (!el) return;
-  const temp = props.temp ?? '—';
-  const dewpoint = props.dewpoint ?? '—';
-  const humidity = props.relativeHumidity ?? '—';
-  const windString = props.windDirection || '—';
-  const windSpeed = props.windSpeed ?? '—';
-  const conditions = props.weather ? props.weather.join(', ') : (props.textDescription || '—');
+  const temp = props.temperature?.value ?? '—';
+  const dewpoint = props.dewpoint?.value ?? '—';
+  const humidity = props.relativeHumidity?.value ?? '—';
+  const windString = props.windDirection?.value || '—';
+  const windSpeed = props.windSpeed?.value ?? '—';
+  const conditions = props.textDescription || '—';
 
   // Compute feels-like
   let feelsLike = temp;
@@ -321,9 +353,9 @@ function heatIndex(t, rh) {
 async function fetchHourlyForecast(cfg) {
   const grid = await resolveGridPoint(cfg);
   if (!grid) return;
-  const data = await nwsFetch(`${NWS_BASE}/gridpoints/${grid.wfo}/${grid.x},${grid.y}/forecast?units=si`);
+  const data = await nwsFetch(`${NWS_BASE}/gridpoints/${grid.wfo}/${grid.x},${grid.y}/forecast/hourly?units=si`);
   if (!data || !data.properties || !data.properties.periods) return;
-  const periods = data.properties.periods.filter(p => p.isDaytime !== undefined).slice(0, 12);
+  const periods = data.properties.periods.slice(0, 12);
   await fadeUpdate('hourly', () => renderHourlyStrip(periods));
 }
 
@@ -351,9 +383,9 @@ function renderHourlyStrip(periods) {
 async function fetchDailyForecast(cfg) {
   const grid = await resolveGridPoint(cfg);
   if (!grid) return;
-  const data = await nwsFetch(`${NWS_BASE}/gridpoints/${grid.wfo}/${grid.x},${grid.y}/forecast/daily?units=si`);
+  const data = await nwsFetch(`${NWS_BASE}/gridpoints/${grid.wfo}/${grid.x},${grid.y}/forecast?units=si`);
   if (!data || !data.properties || !data.properties.periods) return;
-  const periods = data.properties.periods.slice(0, 7);
+  const periods = data.properties.periods.filter(p => p.isDaytime).slice(0, 7);
   await fadeUpdate('daily', () => renderDailyStrip(periods));
 }
 
@@ -389,7 +421,45 @@ let radarPlaying = true;
 let radarFrames = [];
 let radarFrameIndex = 0;
 let radarAnimTimer = null;
-let radarTileCache = {};
+
+/* Maps frame timestamp → Map(tile URL → object URL). IEM sends no
+   Cache-Control on WMS tiles, so without this the animation loop
+   (every 700ms, 25 distinct timestamps) re-requests every visible
+   tile from the network continuously. Cache each tile once per
+   timestamp and reuse it on subsequent loop passes. */
+let radarTileCache = new Map();
+
+const CachedWMS = L.TileLayer.WMS.extend({
+  createTile(coords, done) {
+    const tile = document.createElement('img');
+    const url = this.getTileUrl(coords);
+    const ts = this.wmsParams.time;
+    let tsCache = radarTileCache.get(ts);
+    if (!tsCache) {
+      tsCache = new Map();
+      radarTileCache.set(ts, tsCache);
+    }
+    const cached = tsCache.get(url);
+    if (cached) {
+      tile.src = cached;
+      setTimeout(() => done(null, tile), 0);
+      return tile;
+    }
+    fetch(url)
+      .then(res => {
+        if (!res.ok) throw new Error(`radar tile ${res.status}`);
+        return res.blob();
+      })
+      .then(blob => {
+        const objUrl = URL.createObjectURL(blob);
+        tsCache.set(url, objUrl);
+        tile.src = objUrl;
+        done(null, tile);
+      })
+      .catch(err => done(err, tile));
+    return tile;
+  }
+});
 
 function initRadar(cfg) {
   radarMap = L.map('radar-map', {
@@ -398,31 +468,46 @@ function initRadar(cfg) {
     dragging: true,
     scrollWheelZoom: true,
     doubleClickZoom: false,
+    fadeAnimation: false,
   }).setView([cfg.lat, cfg.lon], cfg.zoom);
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 19,
   }).addTo(radarMap);
 
-  radarLayer = L.tileLayer.wms(
+  radarLayer = new CachedWMS(
     'https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi',
     {
       format: 'image/png',
       transparent: true,
-      layers: 'nexrad-n0q-900913',
+      layers: 'nexrad-n0q-wmst',
     }
   ).addTo(radarMap);
 
   buildRadarFrames();
-  animateRadar();
+  startRadarLoop();
 }
 
 function buildRadarFrames() {
   radarFrames = [];
-  const now = new Date();
+  const FIVE_MIN = 5 * 60000;
+  // IEM's WMS-T time dimension has nearestValue="0" — it requires an exact
+  // match against its 5-minute data grid rather than snapping, so frame
+  // timestamps must be floored to that grid or every request comes back blank.
+  const alignedNow = Math.floor(Date.now() / FIVE_MIN) * FIVE_MIN;
   for (let i = 24; i >= 0; i--) {
-    const t = new Date(now.getTime() - i * 5 * 60000);
-    radarFrames.push(t.toISOString());
+    radarFrames.push(new Date(alignedNow - i * FIVE_MIN).toISOString());
+  }
+  pruneRadarTileCache();
+}
+
+function pruneRadarTileCache() {
+  const valid = new Set(radarFrames);
+  for (const [ts, tsCache] of radarTileCache) {
+    if (!valid.has(ts)) {
+      for (const objUrl of tsCache.values()) URL.revokeObjectURL(objUrl);
+      radarTileCache.delete(ts);
+    }
   }
 }
 
@@ -433,10 +518,31 @@ function animateRadar() {
   radarAnimTimer = setTimeout(animateRadar, 700);
 }
 
+// Shows the most recent frame immediately, then starts the oldest→newest
+// loop only once that frame's tiles have finished loading — so the display
+// never sits on a blank map waiting to climb through 2 hours of history.
+function startRadarLoop() {
+  if (radarAnimTimer) {
+    clearTimeout(radarAnimTimer);
+    radarAnimTimer = null;
+  }
+  showRadarFrame(radarFrames.length - 1);
+  radarLayer.off('load');
+  radarLayer.once('load', () => {
+    radarFrameIndex = 0;
+    if (radarPlaying) animateRadar();
+  });
+}
+
+let lastRadarTimestamp = null;
+
 function showRadarFrame(index) {
   const ts = radarFrames[index];
   if (!ts) return;
-  radarLayer.setParams({ time: ts.substring(0, 19).replace('T', ' ') });
+  if (ts !== lastRadarTimestamp) {
+    radarLayer.setParams({ time: ts });
+    lastRadarTimestamp = ts;
+  }
   const tsEl = document.getElementById('radar-timestamp');
   if (tsEl) {
     tsEl.textContent = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -453,10 +559,7 @@ function toggleRadarPlay() {
 
 async function refreshRadarFrames() {
   buildRadarFrames();
-  if (radarPlaying) {
-    radarFrameIndex = 0;
-    showRadarFrame(0);
-  }
+  if (radarPlaying) startRadarLoop();
   updatePanelStatus('radar', true);
 }
 
@@ -500,6 +603,8 @@ async function init() {
     cfg = { ...DEFAULTS };
     writeLocationCookie(cfg);
   }
+
+  loadCachedGrid(cfg);
 
   const saved = localStorage.getItem('panelState');
   if (saved) {
