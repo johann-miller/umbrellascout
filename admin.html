@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Admin</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { overflow: auto; height: auto; }
+    .admin-container {
+      max-width: 1200px;
+      margin: 2vh auto;
+      padding: 2vw;
+      font-family: var(--font-stack);
+    }
+    .admin-container h1 {
+      font-size: clamp(18px, 2vh, 28px);
+      margin-bottom: 2vh;
+    }
+    .admin-section {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 2vw;
+      margin-bottom: 2vh;
+    }
+    .admin-section h2 {
+      font-size: clamp(14px, 1.4vh, 20px);
+      margin-bottom: 1vh;
+      color: var(--color-text-secondary);
+    }
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: clamp(10px, 0.9vh, 14px);
+    }
+    .log-table th, .log-table td {
+      text-align: left;
+      padding: 0.5vh 0.5vw;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .log-table th {
+      cursor: pointer;
+      user-select: none;
+      color: var(--color-text-secondary);
+      font-weight: 600;
+    }
+    .log-table th:hover { text-decoration: underline; }
+    .log-status-ok { color: var(--color-ok); }
+    .log-status-err { color: var(--color-fail); }
+    .form-group {
+      margin-bottom: 1vh;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 0.3vh;
+      font-weight: 600;
+      font-size: clamp(11px, 1vh, 14px);
+    }
+    .form-group input {
+      width: 200px;
+      padding: 0.4vh 0.5vw;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      font-size: inherit;
+    }
+    .form-group button {
+      padding: 0.5vh 1vw;
+      background: var(--color-accent);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: inherit;
+    }
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1vw;
+    }
+    .state-card {
+      background: var(--color-bg);
+      border-radius: 4px;
+      padding: 1vh 1vw;
+    }
+    .state-card h3 {
+      font-size: clamp(11px, 1vh, 14px);
+      margin-bottom: 0.5vh;
+    }
+    .state-card p {
+      font-size: clamp(10px, 0.8vh, 13px);
+      color: var(--color-text-secondary);
+    }
+    .filter-bar {
+      display: flex;
+      gap: 1vw;
+      margin-bottom: 1vh;
+      align-items: center;
+    }
+    .filter-bar select, .filter-bar input {
+      padding: 0.3vh 0.5vw;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      font-size: inherit;
+    }
+    .back-link {
+      display: inline-block;
+      margin-bottom: 2vh;
+      color: var(--color-accent);
+      text-decoration: none;
+    }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="admin-container">
+    <a class="back-link" href="index.html">← Back to Dashboard</a>
+    <h1>Dashboard Admin</h1>
+
+    <!-- Location config -->
+    <div class="admin-section">
+      <h2>Location Configuration</h2>
+      <div class="form-group">
+        <label for="cfg-lat">Latitude</label>
+        <input type="number" id="cfg-lat" step="0.0001" />
+      </div>
+      <div class="form-group">
+        <label for="cfg-lon">Longitude</label>
+        <input type="number" id="cfg-lon" step="0.0001" />
+      </div>
+      <div class="form-group">
+        <label for="cfg-zoom">Radar Zoom</label>
+        <input type="number" id="cfg-zoom" min="1" max="18" step="1" />
+      </div>
+      <div class="form-group">
+        <button id="save-cfg-btn">Save &amp; Reload Dashboard</button>
+      </div>
+    </div>
+
+    <!-- Panel state -->
+    <div class="admin-section">
+      <h2>Panel State</h2>
+      <div class="state-grid" id="state-grid"></div>
+    </div>
+
+    <!-- Logs -->
+    <div class="admin-section">
+      <h2>Fetch Logs</h2>
+      <div class="filter-bar">
+        <label>Endpoint:</label>
+        <select id="filter-endpoint"><option value="">All</option></select>
+        <label>Status:</label>
+        <select id="filter-status">
+          <option value="">All</option>
+          <option value="ok">OK</option>
+          <option value="err">Error</option>
+        </select>
+        <button id="refresh-logs-btn">Refresh</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th data-sort="timestamp">Timestamp</th>
+              <th data-sort="endpoint">Endpoint</th>
+              <th data-sort="status">Status</th>
+              <th data-sort="error">Error</th>
+              <th data-sort="responseTime">Time (ms)</th>
+              <th data-sort="retryCount">Retries</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>

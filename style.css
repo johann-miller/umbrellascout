@@ -1,0 +1,371 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --color-bg: #f4f4f4;
+  --color-surface: #ffffff;
+  --color-text: #1a1a1a;
+  --color-text-secondary: #555555;
+  --color-border: #d0d0d0;
+  --color-accent: #2563eb;
+  --color-ok: #16a34a;
+  --color-stale: #d97706;
+  --color-fail: #dc2626;
+  --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-stack);
+  font-size: clamp(12px, 1.2vh, 18px);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* ── Outer shell ────────────────────────────────────── */
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+.header {
+  flex: 0 0 6%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2vw;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  font-size: clamp(14px, 1.4vh, 24px);
+  font-weight: 600;
+}
+
+.header-location {
+  white-space: nowrap;
+}
+
+.header-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Middle row ─────────────────────────────────────── */
+.middle {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.radar-panel {
+  flex: 3;
+  position: relative;
+  border-right: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+#radar-map {
+  width: 100%;
+  height: 100%;
+}
+
+.conditions-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ── Current conditions ─────────────────────────────── */
+.current-conditions {
+  flex: 0 0 auto;
+  padding: 1.5vh 2vw;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.current-conditions h2 {
+  font-size: clamp(11px, 1vh, 16px);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+  margin-bottom: 1vh;
+}
+
+.condition-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.4vh 0;
+  font-size: clamp(13px, 1.2vh, 20px);
+}
+
+.condition-label {
+  color: var(--color-text-secondary);
+}
+
+.condition-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.condition-temp {
+  font-size: clamp(24px, 2.8vh, 48px);
+  font-weight: 700;
+}
+
+/* ── Hourly strip ───────────────────────────────────── */
+.hourly-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  background: var(--color-surface);
+}
+
+.hourly-section h2 {
+  flex: 0 0 auto;
+  font-size: clamp(11px, 1vh, 16px);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+  padding: 1vh 2vw;
+}
+
+.hourly-strip {
+  flex: 1;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 1vw;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.hourly-card {
+  flex: 0 0 auto;
+  width: clamp(60px, 5vw, 100px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3vh;
+  padding: 0.5vh 0.3vw;
+  border-right: 1px solid var(--color-border);
+  font-size: clamp(10px, 0.9vh, 14px);
+  text-align: center;
+}
+
+.hourly-card:last-child {
+  border-right: none;
+}
+
+.hourly-icon {
+  width: clamp(28px, 2.5vh, 48px);
+  height: clamp(28px, 2.5vh, 48px);
+  object-fit: contain;
+}
+
+.hourly-temp {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hourly-pop {
+  color: var(--color-accent);
+  font-weight: 600;
+  font-size: clamp(9px, 0.8vh, 13px);
+}
+
+.hourly-time {
+  color: var(--color-text-secondary);
+  font-size: clamp(9px, 0.75vh, 12px);
+}
+
+/* ── 7-day forecast ─────────────────────────────────── */
+.daily-section {
+  flex: 0 0 16%;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.daily-section h2 {
+  font-size: clamp(11px, 1vh, 16px);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+  padding: 0.8vh 2vw;
+  flex: 0 0 auto;
+}
+
+.daily-strip {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  overflow: hidden;
+  min-height: 0;
+  padding: 0 1vw;
+}
+
+.daily-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3vh;
+  padding: 0.5vh 0.5vw;
+  border-right: 1px solid var(--color-border);
+  font-size: clamp(10px, 1vh, 16px);
+  text-align: center;
+  min-height: 0;
+}
+
+.daily-card:last-child {
+  border-right: none;
+}
+
+.daily-day {
+  font-weight: 600;
+}
+
+.daily-icon {
+  width: clamp(32px, 3vh, 56px);
+  height: clamp(32px, 3vh, 56px);
+  object-fit: contain;
+}
+
+.daily-desc {
+  font-size: clamp(8px, 0.7vh, 12px);
+  color: var(--color-text-secondary);
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-temps {
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(10px, 0.9vh, 14px);
+}
+
+.daily-high {
+  font-weight: 600;
+}
+
+.daily-low {
+  color: var(--color-text-secondary);
+}
+
+.daily-pop {
+  color: var(--color-accent);
+  font-weight: 600;
+  font-size: clamp(8px, 0.7vh, 12px);
+}
+
+/* ── Attribution ────────────────────────────────────── */
+.attribution {
+  flex: 0 0 2%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(9px, 0.7vh, 12px);
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  gap: 1vw;
+}
+
+.attribution a {
+  color: var(--color-text-secondary);
+  text-decoration: none;
+}
+
+/* ── Radar overlay controls ─────────────────────────── */
+.radar-controls {
+  position: absolute;
+  top: 1vh;
+  left: 1vw;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0.5vw;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 0.4vh 0.8vw;
+  border-radius: 4px;
+  font-size: clamp(10px, 0.9vh, 14px);
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-controls button {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 0.2vh 0.5vw;
+  cursor: pointer;
+  font-size: inherit;
+}
+
+.radar-timestamp {
+  white-space: nowrap;
+}
+
+/* ── Panel status indicators ────────────────────────── */
+.panel-status {
+  position: absolute;
+  top: 1vh;
+  right: 1vw;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0.3vw;
+  font-size: clamp(9px, 0.7vh, 12px);
+  padding: 0.3vh 0.5vw;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-ok .status-dot { background: var(--color-ok); }
+.status-stale .status-dot { background: var(--color-stale); }
+.status-fail .status-dot { background: var(--color-fail); }
+
+.status-label {
+  white-space: nowrap;
+}
+
+/* ── Fade transition for data swaps ─────────────────── */
+.fade-out {
+  opacity: 0.3;
+  transition: opacity 0.3s ease;
+}
+
+.fade-in {
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+/* ── Leaflet overrides ──────────────────────────────── */
+.leaflet-control-zoom,
+.leaflet-control-attribution {
+  display: none !important;
+}

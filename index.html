@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+  <div class="dashboard">
+    <!-- Header -->
+    <header class="header">
+      <span class="header-location" id="header-location">Loading…</span>
+      <span class="header-time" id="header-time">--:--:--</span>
+    </header>
+
+    <!-- Middle row: radar + conditions -->
+    <div class="middle">
+      <div class="radar-panel">
+        <div id="radar-map"></div>
+        <div class="radar-controls">
+          <button id="radar-play-btn" onclick="toggleRadarPlay()">⏸</button>
+          <span class="radar-timestamp" id="radar-timestamp">--:--</span>
+        </div>
+        <div class="panel-status status-ok" id="status-radar">
+          <span class="status-dot"></span>
+          <span class="status-label">Live</span>
+        </div>
+      </div>
+
+      <div class="conditions-panel">
+        <div class="current-conditions" id="current-conditions">
+          <h2>Current Conditions</h2>
+          <div class="condition-row">
+            <span class="condition-label">Loading…</span>
+          </div>
+        </div>
+        <div class="hourly-section">
+          <h2>Next 12 Hours</h2>
+          <div class="hourly-strip" id="hourly-strip"></div>
+          <div class="panel-status status-ok" id="status-hourly" style="position:relative; top:auto; right:auto; padding: 0.5vh 2vw;">
+            <span class="status-dot"></span>
+            <span class="status-label">Live</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7-day forecast -->
+    <div class="daily-section">
+      <h2>7-Day Forecast</h2>
+      <div class="daily-strip" id="daily-strip"></div>
+      <div class="panel-status status-ok" id="status-daily" style="position:relative; top:auto; right:auto; padding: 0.3vh 2vw;">
+        <span class="status-dot"></span>
+        <span class="status-label">Live</span>
+      </div>
+    </div>
+
+    <!-- Attribution -->
+    <footer class="attribution">
+      <span>© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors © CARTO</span>
+      <span>·</span>
+      <span>Radar: <a href="https://mesonet.agron.iastate.edu/" target="_blank" rel="noopener">Iowa Environmental Mesonet</a>, Iowa State University</span>
+      <span>·</span>
+      <span>Forecast: <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a></span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
