@@ -12,62 +12,103 @@
 </head>
 <body>
   <div class="dashboard">
-    <!-- Header -->
-    <header class="header">
-      <span class="header-location" id="header-location">Loading…</span>
-      <span class="header-time" id="header-time">--:--:--</span>
-    </header>
+    <!-- Radar fills the entire viewport as the base layer; everything
+         else floats above it as semi-transparent tiles. -->
+    <div id="radar-map"></div>
 
-    <!-- Middle row: radar + conditions -->
-    <div class="middle">
-      <div class="radar-panel">
-        <div id="radar-map"></div>
-        <div class="radar-controls">
-          <button id="radar-play-btn" onclick="toggleRadarPlay()">⏸</button>
-          <span class="radar-timestamp" id="radar-timestamp">--:--</span>
-        </div>
-        <div class="panel-status status-ok" id="status-radar">
-          <span class="status-dot"></span>
-          <span class="status-label">Live</span>
+    <!-- Radar transport controls -->
+    <div class="radar-controls">
+      <button id="radar-play-btn" onclick="toggleRadarPlay()">⏸</button>
+      <button id="radar-speed-down-btn" onclick="adjustRadarSpeed(-1)">−</button>
+      <span class="radar-speed-readout" id="radar-speed-readout">1×</span>
+      <button id="radar-speed-up-btn" onclick="adjustRadarSpeed(1)">+</button>
+      <div class="radar-progress">
+        <div class="radar-progress-fill" id="radar-progress-fill"></div>
+      </div>
+      <span class="radar-timestamp" id="radar-timestamp">--:--</span>
+    </div>
+
+    <!-- Radar status: hidden while healthy (see .status-ok rule), only
+         appears for stale/failed so failures stay visible per SPEC.md
+         without a "Live" badge cluttering the normal case. -->
+    <div class="panel-status status-ok" id="status-radar">
+      <span class="status-dot"></span>
+      <span class="status-label">Live</span>
+    </div>
+
+    <!-- Right column: current conditions + hourly -->
+    <div class="right-column">
+      <div class="current-conditions" id="current-conditions">
+        <h2>Current Conditions</h2>
+        <div class="condition-row">
+          <span class="condition-label">Loading…</span>
         </div>
       </div>
-
-      <div class="conditions-panel">
-        <div class="current-conditions" id="current-conditions">
-          <h2>Current Conditions</h2>
-          <div class="condition-row">
-            <span class="condition-label">Loading…</span>
-          </div>
-        </div>
-        <div class="hourly-section">
+      <div class="hourly-section">
+        <div class="tile-heading-row">
           <h2>Next 12 Hours</h2>
-          <div class="hourly-strip" id="hourly-strip"></div>
-          <div class="panel-status status-ok" id="status-hourly" style="position:relative; top:auto; right:auto; padding: 0.5vh 2vw;">
+          <div class="panel-status status-ok" id="status-hourly">
             <span class="status-dot"></span>
             <span class="status-label">Live</span>
           </div>
         </div>
+        <div class="hourly-strip" id="hourly-strip"></div>
       </div>
     </div>
 
     <!-- 7-day forecast -->
     <div class="daily-section">
-      <h2>7-Day Forecast</h2>
-      <div class="daily-strip" id="daily-strip"></div>
-      <div class="panel-status status-ok" id="status-daily" style="position:relative; top:auto; right:auto; padding: 0.3vh 2vw;">
-        <span class="status-dot"></span>
-        <span class="status-label">Live</span>
+      <div class="tile-heading-row">
+        <h2>7-Day Forecast</h2>
+        <div class="panel-status status-ok" id="status-daily">
+          <span class="status-dot"></span>
+          <span class="status-label">Live</span>
+        </div>
       </div>
+      <div class="daily-strip" id="daily-strip"></div>
     </div>
 
-    <!-- Attribution -->
-    <footer class="attribution">
+    <!-- Credits strip: required attribution, kept as short as possible -->
+    <div class="attribution">
       <span>© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors © CARTO</span>
       <span>·</span>
       <span>Radar: <a href="https://mesonet.agron.iastate.edu/" target="_blank" rel="noopener">Iowa Environmental Mesonet</a>, Iowa State University</span>
       <span>·</span>
       <span>Forecast: <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a></span>
-    </footer>
+    </div>
+
+    <!-- Hidden admin drawer, toggled by the "H" key. Nothing in the
+         normal UI hints this exists — see the keydown listener in app.js. -->
+    <div class="admin-drawer" id="admin-drawer" hidden>
+      <div class="admin-drawer-header">
+        <h2>Admin</h2>
+        <button class="admin-close-btn" onclick="closeAdminDrawer()">×</button>
+      </div>
+
+      <section class="admin-section">
+        <h3>Location</h3>
+        <label class="admin-field">
+          Latitude
+          <input type="number" id="admin-cfg-lat" step="0.0001">
+        </label>
+        <label class="admin-field">
+          Longitude
+          <input type="number" id="admin-cfg-lon" step="0.0001">
+        </label>
+        <label class="admin-field">
+          Radar Zoom
+          <input type="number" id="admin-cfg-zoom" min="1" max="18" step="1">
+        </label>
+        <button class="admin-btn" onclick="saveAdminLocation()">Save &amp; Reload</button>
+      </section>
+
+      <section class="admin-section">
+        <h3>Pin Locations</h3>
+        <button class="admin-btn" id="admin-pin-toggle-btn" onclick="toggleAdminPinMode()">+ Add Pin</button>
+        <p class="admin-pin-hint" id="admin-pin-hint" hidden>Click the map to place a pin…</p>
+        <div class="admin-pin-list" id="admin-pin-list"></div>
+      </section>
+    </div>
   </div>
 
   <script src="app.js"></script>

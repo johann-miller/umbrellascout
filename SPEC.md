@@ -31,30 +31,46 @@ conditions, and forecast continuously. Static frontend, no backend, no API keys.
 - Temperature: Celsius, as returned with `units=si`
 - Wind: km/h, as returned with `units=si`
 
-## UI Layout (target: 1920×1080, 16:9, flexbox for adaptability)
+## UI Layout (target: 1920×1080, 16:9)
+
+Radar is a full-bleed background layer (`#radar-map { position: fixed; inset: 0; }`);
+every other panel is a floating tile positioned over it with `position: fixed`,
+so the animated radar reads through the open space around the tiles instead of
+being boxed into a column.
 
 ```
-┌─────────────────────────────────────────────┐
-│ Header: location · current time · date        │ ~6% height
-├───────────────────────────┬───────────────────┤
-│                           │ Current Conditions │
-│                           │ (temp °C, feels    │
-│      RADAR                │ like, wind, humidity)│  ~60/40 split
-│  (past 2h animated loop,  │──────────────────── │
-│   play/pause state)       │ Hourly strip        │
-│                           │ (next 12h, icons,   │
-│                           │  precip probability)│
-├───────────────────────────┴───────────────────┤
-│  7-Day Forecast (flex row, 7 equal columns)    │ ~16% height
-├─────────────────────────────────────────────┤
-│  Attribution line                              │ ~2% height
-└─────────────────────────────────────────────┘
+┌───────────────────┐                          ┌─────────────────────┐
+│ HEADER             │                          │                     │
+└───────────────────┘                          │                     │
+┌───────────┐                                  │  Current Conditions │
+│ ● Live     │                                  │  (huge temp, feels  │
+├───────────┤        (radar visible through)   │  like, wind, humid) │
+│ attribution│                                  ├─────────────────────┤
+└───────────┘                                  │  Next 12 Hours       │
+┌──────────────────────────┐                    │  (scrollable list)  │
+│ ⏸ − 1× + ▓▓▓▓▓░░░ 14:05  │                    │                     │
+└──────────────────────────┘                    └─────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│  7-Day Forecast (flex row, 7 equal columns)                        │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
-- Outer container: `display:flex; flex-direction:column; height:100vh`
-- Middle row: `display:flex; flex-direction:row` — radar panel `flex:3`, conditions panel `flex:1`
-- 7-day strip: `display:flex; flex:1`, equal-width day cards, `justify-content:space-between`
-- Font sizing via `clamp()` for TV-safe scaling; light theme for bright-room viewing
+- Tiles: flat semi-transparent white (`rgba(255,255,255,0.86)`), rounded
+  corners, `box-shadow` for lift. Deliberately **no `backdrop-filter: blur()`**
+  — blur has to resample everything beneath it on every repaint, and the
+  radar loop repaints every ~350ms; continuous blur recompute on a Pi 3B+'s
+  GPU is not worth the risk. A flat alpha-blended fill reads nearly the same
+  at TV viewing distance for a fraction of the render cost.
+- Header: top, full width, floating tile with location + a large clock.
+- Right column: `current-conditions` + `hourly-section` tiles stacked,
+  fixed width, right-aligned, from below the header to above the daily tile.
+- Daily forecast: bottom, full width, flex row of 7 equal-width day cards.
+- Radar transport controls (play/pause, speed, progress, timestamp): a
+  tile in the open lower-left area, above the daily tile.
+- Radar status + attribution: stacked tiles in the open upper-left area.
+- Font sizing via `clamp()`, pushed deliberately large (e.g. the current
+  temperature reads at up to ~150px) so the display is legible from across
+  a lobby, not just up close. Light theme for bright-room viewing.
 
 ## Attribution (required, not optional)
 A persistent attribution line must be visible on the main display:
@@ -66,7 +82,8 @@ Keep it small but legible. This is a licensing obligation of both tile sources.
 - Source: IEM CONUS NEXRAD base reflectivity (N0Q), Web Mercator
   - Current: `https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q.cgi?`, layer `nexrad-n0q-900913`
   - Time-enabled (for the animated loop): `https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi?`
-- Leaflet integration via `L.tileLayer.wms(...)` with `format: 'image/png'`, `transparent: true`
+- The kiosk view is fixed (no pan/zoom in practice) and always Ohio, so the radar panel is drawn as a single non-tiled WMS `GetMap` image per frame — `format=image/png`, `transparent=true` — rather than a Leaflet tile grid. The `BBOX`/`WIDTH`/`HEIGHT` are computed once and reused for every frame; only `TIME` changes per request. This cuts each frame from several tile requests down to one HTTP request. Rendered via `L.imageOverlay(...)`, swapped with `setUrl()`, fetched/cached manually as blob URLs (`fetch()` → `URL.createObjectURL()`) since ImageOverlay has no built-in tile cache.
+- The requested `BBOX` is capped to a fixed extent around the configured lat/lon (`RADAR_HALF_EXTENT_M` in `app.js`, ~245km true ground half-extent, ~490km box), independent of the admin-configurable display zoom. This is deliberate: the display zoom controls how the basemap looks, but the radar request should never balloon out to distant states just because zoom is wide — data outside the capped extent simply isn't requested, and that part of the panel shows plain basemap.
 - Frame list is constructed client-side from 5-minute timestamps across the past 2 hours, not read from a JSON manifest
 - Loop pauses/resumes with a visible play/pause indicator, and displays the timestamp of the frame currently shown
 - Be a polite consumer: this is a university-run public service. Cache frames, don't re-request unchanged timestamps, and don't poll faster than the 5-minute data cadence.

@@ -19,21 +19,17 @@
   `value` is `0` (most hours), `0` is falsy, so the `||` falls through to
   stringifying the whole object.
 
-## UI
+- [ ] **Admin panel state always shows "unknown"/"never"**
+  `renderPanelState()` (admin.js) reads `localStorage.getItem('panel_' + p)`
+  per panel, but `app.js` never writes those keys — `updatePanelStatus()`
+  (app.js) writes the whole state object to a single `'panelState'` key
+  instead. The admin `/admin` state cards are permanently stale/empty as a
+  result.
 
-- [ ] **Re-examine 12-hour forecast placement.** Currently stacked under
-  current conditions in the narrow right-hand column (SPEC.md's ~60/40
-  radar/conditions split). Worth reconsidering whether that's the right
-  spot for a 12-card horizontal strip.
+## UI
 
 - [ ] **Replace default NWS icon URLs with custom SVGs.** Hourly and daily
   cards currently render `<img src="{p.icon}">` pointing at
   `api.weather.gov/icons/...`. Wants a custom SVG icon set instead —
   needs an icon mapping from NWS's `shortForecast`/icon condition codes
   to the custom set.
-
-- [ ] **Simplify overall UI: higher contrast, less grey more black,
-  larger primary information.** Current design leans on grey tones
-  (see style.css `--color-*` variables); needs a pass toward a higher-
-  contrast, higher-hierarchy look so the most important numbers (temp,
-  radar) read clearly at TV viewing distance.

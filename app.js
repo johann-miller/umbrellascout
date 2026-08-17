@@ -424,57 +424,79 @@ let radarPlaying = true;
 let radarFrames = [];
 let radarFrameIndex = 0;
 let radarAnimTimer = null;
+const RADAR_SPEED_STEPS = [0.25, 0.5, 1, 2, 4, 8];
+let radarSpeedIndex = RADAR_SPEED_STEPS.indexOf(1);
+let radarSpeedMultiplier = RADAR_SPEED_STEPS[radarSpeedIndex];
+let radarBBox = null; // fixed EPSG:3857 bbox + pixel size, capped around the configured location; computed once
 const RADAR_FRAME_MS = 350;
-const RADAR_OVERLAP_MS = 200; // how long incoming/outgoing frames stay stacked before outgoing is hidden
+const RADAR_OVERLAP_MS = 50; // how long incoming/outgoing frames stay stacked before outgoing is hidden
+const WMS_TIME_URL = 'https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi';
 
-/* Maps frame timestamp → Map(tile URL → object URL). IEM sends no
-   Cache-Control on WMS tiles, so without this the animation loop
-   re-requests every visible tile from the network continuously.
-   Cache each tile once per timestamp and reuse it on subsequent
-   loop passes. Shared by both layer instances below. */
-let radarTileCache = new Map();
+/* Requests are capped to a fixed extent around the configured location,
+   independent of whatever zoom the admin display happens to use — this
+   deployment only ever needs Ohio and its immediate neighbors, so there's
+   no reason to request (or show) radar data hundreds of km further out
+   just because the basemap's zoom is wide enough to include it. */
+const RADAR_HALF_EXTENT_M = 320000; // ~245km true ground half-extent at Ohio's latitude → ~490km box
+const RADAR_IMAGE_PX = 1024; // fixed request resolution for that fixed extent (~625m/px, near NEXRAD's native ~500m)
 
-const CachedWMS = L.TileLayer.WMS.extend({
-  createTile(coords, done) {
-    const tile = document.createElement('img');
-    const url = this.getTileUrl(coords);
-    const ts = this.wmsParams.time;
-    let tsCache = radarTileCache.get(ts);
-    if (!tsCache) {
-      tsCache = new Map();
-      radarTileCache.set(ts, tsCache);
-    }
-    // Wait for the actual decode/paint, not just src assignment — a cached
-    // blob URL still needs the browser to load it into this new <img>
-    // element, and skipping that wait is what caused the blank flash.
-    tile.onload = () => done(null, tile);
-    tile.onerror = () => done(new Error('radar tile failed to load'), tile);
+/* Maps frame timestamp → object URL of the fetched blob. IEM sends no
+   Cache-Control on WMS responses, so without this the animation loop
+   would re-request every frame from the network on every loop pass.
 
-    const cached = tsCache.get(url);
-    if (cached) {
-      tile.src = cached;
-      return tile;
-    }
-    // A stalled (not refused) connection never resolves fetch() on its own;
-    // without a timeout that would leave this tile "loading" forever and
-    // permanently wedge the crossfade that waits on the layer's load event.
-    fetch(url, { signal: AbortSignal.timeout(10000) })
-      .then(res => {
-        if (!res.ok) throw new Error(`radar tile ${res.status}`);
-        return res.blob();
-      })
-      .then(blob => {
-        const objUrl = URL.createObjectURL(blob);
-        tsCache.set(url, objUrl);
-        tile.src = objUrl;
-      })
-      .catch(err => {
-        tile.onload = tile.onerror = null;
-        done(err, tile);
-      });
-    return tile;
-  }
-});
+   This display never pans or zooms (fixed kiosk view, always Ohio), so
+   rather than a Leaflet tile grid recomputed per frame, the whole panel
+   is requested as a single non-tiled GetMap image per frame — one HTTP
+   request per frame instead of several tile requests. */
+let radarFrameCache = new Map();
+
+function computeRadarBBox(cfg) {
+  const center = L.CRS.EPSG3857.project(L.latLng(cfg.lat, cfg.lon));
+  radarBBox = {
+    xmin: center.x - RADAR_HALF_EXTENT_M,
+    ymin: center.y - RADAR_HALF_EXTENT_M,
+    xmax: center.x + RADAR_HALF_EXTENT_M,
+    ymax: center.y + RADAR_HALF_EXTENT_M,
+    widthPx: RADAR_IMAGE_PX,
+    heightPx: RADAR_IMAGE_PX,
+  };
+}
+
+function radarFrameUrl(ts) {
+  const b = radarBBox;
+  const params = new URLSearchParams({
+    SERVICE: 'WMS',
+    VERSION: '1.1.1', // 1.3.0 flips BBOX axis order for some CRSes; 1.1.1 keeps plain x,y
+    REQUEST: 'GetMap',
+    LAYERS: 'nexrad-n0q-wmst',
+    SRS: 'EPSG:3857',
+    BBOX: `${b.xmin},${b.ymin},${b.xmax},${b.ymax}`,
+    WIDTH: String(Math.round(b.widthPx)),
+    HEIGHT: String(Math.round(b.heightPx)),
+    FORMAT: 'image/png',
+    TRANSPARENT: 'true',
+    TIME: ts,
+  });
+  return `${WMS_TIME_URL}?${params}`;
+}
+
+function fetchRadarFrameBlob(ts) {
+  const cached = radarFrameCache.get(ts);
+  if (cached) return Promise.resolve(cached);
+  // A stalled (not refused) connection never resolves fetch() on its own;
+  // without a timeout that would leave a frame "loading" forever and
+  // permanently wedge the overlap-cut swap that waits on it.
+  return fetch(radarFrameUrl(ts), { signal: AbortSignal.timeout(10000) })
+    .then(res => {
+      if (!res.ok) throw new Error(`radar frame ${res.status}`);
+      return res.blob();
+    })
+    .then(blob => {
+      const objUrl = URL.createObjectURL(blob);
+      radarFrameCache.set(ts, objUrl);
+      return objUrl;
+    });
+}
 
 function initRadar(cfg) {
   radarMap = L.map('radar-map', {
@@ -490,22 +512,32 @@ function initRadar(cfg) {
     maxZoom: 19,
   }).addTo(radarMap);
 
-  // Two overlapping WMS layers: the incoming frame loads fully hidden
-  // (opacity 0) on top of the visible one. Once loaded it's revealed
-  // instantly and held stacked over the outgoing frame briefly before
-  // the outgoing one is hidden, so there's never a gap with neither painted.
-  const wmsOptions = {
-    format: 'image/png',
-    transparent: true,
-    layers: 'nexrad-n0q-wmst',
-  };
-  const wmsUrl = 'https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi';
-  radarLayerA = new CachedWMS(wmsUrl, { ...wmsOptions, opacity: 1 }).addTo(radarMap);
-  radarLayerB = new CachedWMS(wmsUrl, { ...wmsOptions, opacity: 0 }).addTo(radarMap);
+  // Bbox is computed once, capped to a fixed extent around the configured
+  // location (not the panel's view/zoom — see RADAR_HALF_EXTENT_M above),
+  // and reused for every frame. Unproject it back to lat/lon so the image
+  // overlay is geo-referenced to the same fixed area it was requested for;
+  // any part of the panel outside that area just shows plain basemap.
+  computeRadarBBox(cfg);
+  const bounds = L.latLngBounds(
+    L.CRS.EPSG3857.unproject(L.point(radarBBox.xmin, radarBBox.ymin)),
+    L.CRS.EPSG3857.unproject(L.point(radarBBox.xmax, radarBBox.ymax))
+  );
+
+  // Two overlapping image overlays, both covering the same fixed bounds:
+  // the incoming frame loads fully hidden (opacity 0) on top of the visible
+  // one. Once loaded it's revealed instantly and held stacked over the
+  // outgoing frame briefly before the outgoing one is hidden, so there's
+  // never a gap with neither painted.
+  radarLayerA = L.imageOverlay('', bounds, { opacity: 1, interactive: false }).addTo(radarMap);
+  radarLayerB = L.imageOverlay('', bounds, { opacity: 0, interactive: false }).addTo(radarMap);
   radarActiveLayer = radarLayerA;
 
   buildRadarFrames();
   startRadarLoop();
+
+  radarMap.on('click', handleAdminMapClick);
+  loadAdminPins();
+  renderAdminPinsOnMap();
 }
 
 function buildRadarFrames() {
@@ -518,15 +550,15 @@ function buildRadarFrames() {
   for (let i = 24; i >= 0; i--) {
     radarFrames.push(new Date(alignedNow - i * FIVE_MIN).toISOString());
   }
-  pruneRadarTileCache();
+  pruneRadarFrameCache();
 }
 
-function pruneRadarTileCache() {
+function pruneRadarFrameCache() {
   const valid = new Set(radarFrames);
-  for (const [ts, tsCache] of radarTileCache) {
+  for (const [ts, objUrl] of radarFrameCache) {
     if (!valid.has(ts)) {
-      for (const objUrl of tsCache.values()) URL.revokeObjectURL(objUrl);
-      radarTileCache.delete(ts);
+      URL.revokeObjectURL(objUrl);
+      radarFrameCache.delete(ts);
     }
   }
 }
@@ -535,7 +567,7 @@ function animateRadar() {
   if (!radarPlaying) return;
   showRadarFrame(radarFrameIndex);
   radarFrameIndex = (radarFrameIndex + 1) % radarFrames.length;
-  radarAnimTimer = setTimeout(animateRadar, RADAR_FRAME_MS);
+  radarAnimTimer = setTimeout(animateRadar, RADAR_FRAME_MS / radarSpeedMultiplier);
 }
 
 // Shows the most recent frame immediately, then starts the oldest→newest
@@ -567,24 +599,17 @@ function showRadarFrame(index, onReady) {
   const incoming = radarActiveLayer === radarLayerA ? radarLayerB : radarLayerA;
   const outgoing = radarActiveLayer;
 
-  let hadError = false;
-  const onTileError = () => { hadError = true; };
   incoming.off('load');
-  incoming.off('tileerror', onTileError);
-  incoming.on('tileerror', onTileError);
+  incoming.off('error');
+  incoming.once('error', () => {
+    // Leave the incoming layer hidden and keep showing the outgoing
+    // (last-good) frame — per SPEC.md, a failure falls back to the last
+    // successfully cached value rather than replacing it with a blank one.
+    radarTransitioning = false;
+    updatePanelStatus('radar', false, 'IEM frame error');
+    onReady?.();
+  });
   incoming.once('load', () => {
-    incoming.off('tileerror', onTileError);
-
-    if (hadError) {
-      // Leave the incoming layer hidden and keep showing the outgoing
-      // (last-good) frame — per SPEC.md, a failure falls back to the last
-      // successfully cached value rather than replacing it with a blank one.
-      radarTransitioning = false;
-      updatePanelStatus('radar', false, 'IEM tile error');
-      onReady?.();
-      return;
-    }
-
     // Reveal the fully-painted incoming frame instantly, on top of the
     // still-visible outgoing one, then hold both stacked briefly before
     // dropping the outgoing frame — no opacity animation on either edge,
@@ -596,13 +621,27 @@ function showRadarFrame(index, onReady) {
     if (tsEl) {
       tsEl.textContent = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     }
+    const progressEl = document.getElementById('radar-progress-fill');
+    if (progressEl) {
+      const pct = radarFrames.length > 1 ? (index / (radarFrames.length - 1)) * 100 : 100;
+      progressEl.style.width = `${pct}%`;
+    }
     setTimeout(() => {
       outgoing.setOpacity(0);
       radarTransitioning = false;
       onReady?.();
     }, RADAR_OVERLAP_MS);
   });
-  incoming.setParams({ time: ts });
+
+  fetchRadarFrameBlob(ts)
+    .then(objUrl => incoming.setUrl(objUrl))
+    .catch(err => {
+      incoming.off('load');
+      incoming.off('error');
+      radarTransitioning = false;
+      updatePanelStatus('radar', false, err.message || 'IEM frame error');
+      onReady?.();
+    });
 }
 
 function toggleRadarPlay() {
@@ -613,21 +652,158 @@ function toggleRadarPlay() {
   else if (radarAnimTimer) clearTimeout(radarAnimTimer);
 }
 
+function adjustRadarSpeed(direction) {
+  radarSpeedIndex = Math.min(RADAR_SPEED_STEPS.length - 1, Math.max(0, radarSpeedIndex + direction));
+  radarSpeedMultiplier = RADAR_SPEED_STEPS[radarSpeedIndex];
+  const readout = document.getElementById('radar-speed-readout');
+  if (readout) readout.textContent = `${radarSpeedMultiplier}×`;
+  // Reschedule the pending tick at the new speed rather than waiting out
+  // the old interval, so the change feels immediate.
+  if (radarPlaying && radarAnimTimer) {
+    clearTimeout(radarAnimTimer);
+    radarAnimTimer = setTimeout(animateRadar, RADAR_FRAME_MS / radarSpeedMultiplier);
+  }
+}
+
 async function refreshRadarFrames() {
   buildRadarFrames();
   if (radarPlaying) startRadarLoop();
 }
 
-/* ── Header clock ──────────────────────────────────── */
-function updateClock(cfg) {
-  const now = new Date();
-  const timeEl = document.getElementById('header-time');
-  const locEl = document.getElementById('header-location');
-  if (timeEl) {
-    timeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+/* ── Admin drawer (hidden; toggled by the "H" key) ─────
+   No visible affordance anywhere in the normal UI points at this — see
+   the keydown listener in init(). Pins are the one part of this that's
+   public-facing: once placed they render on the live map for everyone,
+   only the *management* UI is hidden. */
+const ADMIN_PINS_KEY = 'adminPins';
+let adminDrawerOpen = false;
+let adminPinMode = false;
+let adminPins = [];
+let adminPinMarkers = [];
+
+function loadAdminPins() {
+  try {
+    const raw = localStorage.getItem(ADMIN_PINS_KEY);
+    adminPins = raw ? JSON.parse(raw) : [];
+  } catch (_) {
+    adminPins = [];
   }
-  if (locEl) {
-    locEl.textContent = `${cfg.lat.toFixed(2)}°, ${cfg.lon.toFixed(2)}°`;
+}
+
+function saveAdminPins() {
+  localStorage.setItem(ADMIN_PINS_KEY, JSON.stringify(adminPins));
+}
+
+function renderAdminPinsOnMap() {
+  adminPinMarkers.forEach(m => radarMap.removeLayer(m));
+  adminPinMarkers = adminPins.map(pin => {
+    const marker = L.marker([pin.lat, pin.lon], {
+      icon: L.divIcon({ className: 'admin-pin-icon', iconSize: [14, 14] }),
+      interactive: false,
+    }).addTo(radarMap);
+    if (pin.label) {
+      marker.bindTooltip(pin.label, {
+        permanent: true,
+        direction: 'right',
+        offset: [10, 0],
+        className: 'admin-pin-label',
+      }).openTooltip();
+    }
+    return marker;
+  });
+}
+
+function renderAdminPinList() {
+  const listEl = document.getElementById('admin-pin-list');
+  if (!listEl) return;
+  listEl.innerHTML = adminPins.map((pin, i) => `
+    <div class="admin-pin-row">
+      <span>${pin.label ? pin.label : `${pin.lat.toFixed(4)}, ${pin.lon.toFixed(4)}`}</span>
+      <button onclick="removeAdminPin(${i})">×</button>
+    </div>
+  `).join('');
+}
+
+function removeAdminPin(index) {
+  adminPins.splice(index, 1);
+  saveAdminPins();
+  renderAdminPinsOnMap();
+  renderAdminPinList();
+}
+
+function setAdminPinMode(active) {
+  adminPinMode = active;
+  const btn = document.getElementById('admin-pin-toggle-btn');
+  const hint = document.getElementById('admin-pin-hint');
+  if (btn) btn.classList.toggle('active', adminPinMode);
+  if (hint) hint.hidden = !adminPinMode;
+}
+
+function toggleAdminPinMode() {
+  setAdminPinMode(!adminPinMode);
+}
+
+function handleAdminMapClick(e) {
+  if (!adminPinMode) return;
+  const label = (window.prompt('Label for this pin (optional):', '') || '').trim();
+  adminPins.push({ lat: e.latlng.lat, lon: e.latlng.lng, label });
+  saveAdminPins();
+  renderAdminPinsOnMap();
+  renderAdminPinList();
+  setAdminPinMode(false);
+}
+
+function openAdminDrawer() {
+  adminDrawerOpen = true;
+  const el = document.getElementById('admin-drawer');
+  if (el) el.hidden = false;
+
+  const cfg = readLocationCookie() || { ...DEFAULTS };
+  const latEl = document.getElementById('admin-cfg-lat');
+  const lonEl = document.getElementById('admin-cfg-lon');
+  const zoomEl = document.getElementById('admin-cfg-zoom');
+  if (latEl) latEl.value = cfg.lat;
+  if (lonEl) lonEl.value = cfg.lon;
+  if (zoomEl) zoomEl.value = cfg.zoom;
+
+  renderAdminPinList();
+}
+
+function closeAdminDrawer() {
+  adminDrawerOpen = false;
+  const el = document.getElementById('admin-drawer');
+  if (el) el.hidden = true;
+  setAdminPinMode(false);
+}
+
+function toggleAdminDrawer() {
+  if (adminDrawerOpen) closeAdminDrawer();
+  else openAdminDrawer();
+}
+
+function saveAdminLocation() {
+  const cfg = readLocationCookie() || { ...DEFAULTS };
+  cfg.lat = parseFloat(document.getElementById('admin-cfg-lat').value);
+  cfg.lon = parseFloat(document.getElementById('admin-cfg-lon').value);
+  cfg.zoom = parseInt(document.getElementById('admin-cfg-zoom').value, 10) || 8;
+  cfg.wfo = null;
+  cfg.x = null;
+  cfg.y = null;
+  writeLocationCookie(cfg);
+  window.location.reload();
+}
+
+function handleAdminKeydown(e) {
+  const activeTag = document.activeElement?.tagName;
+  const typing = activeTag === 'INPUT' || activeTag === 'TEXTAREA';
+
+  if (e.key === 'Escape' && adminDrawerOpen) {
+    closeAdminDrawer();
+    return;
+  }
+  if (typing) return;
+  if (e.key.toLowerCase() === 'h' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    toggleAdminDrawer();
   }
 }
 
@@ -675,9 +851,8 @@ async function init() {
   pruneOldLogs();
 
   initRadar(cfg);
-  updateClock(cfg);
-  setInterval(() => updateClock(cfg), 1000);
   startRefresh(cfg);
+  document.addEventListener('keydown', handleAdminKeydown);
 }
 
 document.addEventListener('DOMContentLoaded', init);
