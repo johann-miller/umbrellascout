@@ -233,7 +233,6 @@ function sleep(ms) {
 
 /* ── Grid point resolution ─────────────────────────── */
 let cachedGrid = null;
-let cachedStationUrl = null;
 let cachedGridKey = '';
 
 function gridKey(cfg) {
@@ -248,14 +247,12 @@ function loadCachedGrid(cfg) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.wfo && parsed.x != null && parsed.y != null && parsed.key === key) {
         cachedGrid = parsed;
-        cachedStationUrl = parsed.stationUrl || null;
         cachedGridKey = key;
         return;
       }
     }
   } catch (_) { /* ignore */ }
   cachedGrid = null;
-  cachedStationUrl = null;
   cachedGridKey = '';
 }
 
@@ -282,71 +279,53 @@ async function resolveGridPoint(cfg) {
 
 /* ── Current conditions (via observations) ──────────── */
 async function fetchCurrentConditions(cfg) {
-  await resolveGridPoint(cfg);
-  const stationsUrl = cachedStationUrl;
+  const grid = await resolveGridPoint(cfg);
+  const stationsUrl = grid?.stationUrl;
   if (!stationsUrl) return;
   const stations = await nwsFetch(stationsUrl);
   if (!stations || !stations.features?.length) return;
   const stationId = stations.features[0].id.split('/').pop();
   const obs = await nwsFetch(`${NWS_BASE}/stations/${stationId}/observations/latest`);
-  if (!obs || !obs.features?.length) return;
-  await fadeUpdate('current', () => renderCurrentConditions(obs.features[0].properties));
+  if (!obs || !obs.properties) return;
+  await fadeUpdate('current', () => renderCurrentConditions(obs.properties));
+}
+
+const CARDINAL_DIRECTIONS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+
+function degreesToCardinal(deg) {
+  if (deg == null || isNaN(deg)) return '—';
+  return CARDINAL_DIRECTIONS[Math.round(deg / 22.5) % 16];
 }
 
 function renderCurrentConditions(props) {
   const el = document.getElementById('current-conditions');
   if (!el) return;
-  const temp = props.temperature?.value ?? '—';
-  const dewpoint = props.dewpoint?.value ?? '—';
-  const humidity = props.relativeHumidity?.value ?? '—';
-  const windString = props.windDirection?.value || '—';
-  const windSpeed = props.windSpeed?.value ?? '—';
-  const conditions = props.textDescription || '—';
+  const temp = props.temperature?.value;
+  const humidity = props.relativeHumidity?.value;
+  const windDir = props.windDirection?.value;
+  const windSpeed = props.windSpeed?.value;
+  const iconUrl = props.icon || '';
+  const conditions = props.textDescription || '';
 
-  // Compute feels-like
-  let feelsLike = temp;
-  if (temp !== '—' && humidity !== '—' && Number(humidity) > 40) {
-    const t = Number(temp);
-    const rh = Number(humidity) / 100;
-    if (t >= 27) {
-      // Heat index (simplified)
-      feelsLike = Math.round(heatIndex(t, rh)) + '°C';
-    } else if (windSpeed !== '—' && Number(windSpeed) > 3.2 && t < 10) {
-      // Wind chill
-      const ws = Number(windSpeed);
-      feelsLike = Math.round(13.2 - 11.37 * Math.pow(ws, 0.16) + 0.33 * rh * t + (17.27 - 0.33 * t) * Math.pow(ws, 0.16)) + '°C';
-    }
-  }
+  const tempStr = temp != null ? `${Math.round(temp)}°C` : '—';
+  const humidityStr = humidity != null ? `${Math.round(humidity)}%` : '—';
+  const windStr = windSpeed != null ? `${degreesToCardinal(windDir)} at ${Math.round(windSpeed)} km/h` : '—';
 
   el.innerHTML = `
-    <div class="condition-row">
-      <span class="condition-label">Temperature</span>
-      <span class="condition-value condition-temp">${temp}°C</span>
-    </div>
-    <div class="condition-row">
-      <span class="condition-label">Feels Like</span>
-      <span class="condition-value">${feelsLike}</span>
+    <h2>Current Conditions</h2>
+    <div class="condition-hero">
+      ${iconUrl ? `<img class="condition-icon" src="${iconUrl}" alt="${conditions}" />` : ''}
+      <span class="condition-temp">${tempStr}</span>
     </div>
     <div class="condition-row">
       <span class="condition-label">Humidity</span>
-      <span class="condition-value">${humidity}%</span>
+      <span class="condition-value">${humidityStr}</span>
     </div>
     <div class="condition-row">
       <span class="condition-label">Wind</span>
-      <span class="condition-value">${windString} at ${windSpeed} km/h</span>
-    </div>
-    <div class="condition-row">
-      <span class="condition-label">Conditions</span>
-      <span class="condition-value">${conditions}</span>
+      <span class="condition-value">${windStr}</span>
     </div>
   `;
-}
-
-function heatIndex(t, rh) {
-  // t in °C, rh 0-1
-  const f = t * 9 / 5 + 32;
-  let hi = -42.379 + 2.04901523 * f + 10.14333127 * rh - 0.22475541 * f * rh - 0.00683783 * f * f - 0.05481717 * rh * rh + 0.00122874 * f * f * rh + 0.00085282 * f * rh * rh - 0.00000199 * f * f * rh * rh;
-  return (hi - 32) * 5 / 9;
 }
 
 /* ── Hourly forecast ───────────────────────────────── */
@@ -355,7 +334,7 @@ async function fetchHourlyForecast(cfg) {
   if (!grid) return;
   const data = await nwsFetch(`${NWS_BASE}/gridpoints/${grid.wfo}/${grid.x},${grid.y}/forecast/hourly?units=si`);
   if (!data || !data.properties || !data.properties.periods) return;
-  const periods = data.properties.periods.slice(0, 12);
+  const periods = data.properties.periods.slice(0, 6);
   await fadeUpdate('hourly', () => renderHourlyStrip(periods));
 }
 
@@ -364,9 +343,8 @@ function renderHourlyStrip(periods) {
   if (!container) return;
   container.innerHTML = periods.map(p => {
     const timeLabel = p.startTime ? new Date(p.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
-    const pop = p.probabilityOfPrecipitation
-      ? `${p.probabilityOfPrecipitation.value || p.probabilityOfPrecipitation}`
-      : '';
+    const popValue = p.probabilityOfPrecipitation?.value;
+    const pop = popValue != null ? `${popValue}%` : '';
     const iconUrl = p.icon || '';
     return `
       <div class="hourly-card">
@@ -396,9 +374,8 @@ function renderDailyStrip(periods) {
   container.innerHTML = periods.map((p, i) => {
     const dayName = i === 0 ? 'Today' : days[new Date(p.startTime).getDay()];
     const iconUrl = p.icon || '';
-    const pop = p.probabilityOfPrecipitation
-      ? `${p.probabilityOfPrecipitation.value || p.probabilityOfPrecipitation}`
-      : '';
+    const popValue = p.probabilityOfPrecipitation?.value;
+    const pop = popValue != null ? `${popValue}%` : '';
     return `
       <div class="daily-card">
         <span class="daily-day">${dayName}</span>
@@ -424,6 +401,9 @@ let radarPlaying = true;
 let radarFrames = [];
 let radarFrameIndex = 0;
 let radarAnimTimer = null;
+let radarProgressFrameIndex = 0; // index whose interval is currently in progress
+let radarProgressFrameStart = 0; // performance.now() when that interval began
+let radarProgressRAFId = null;
 const RADAR_SPEED_STEPS = [0.25, 0.5, 1, 2, 4, 8];
 let radarSpeedIndex = RADAR_SPEED_STEPS.indexOf(1);
 let radarSpeedMultiplier = RADAR_SPEED_STEPS[radarSpeedIndex];
@@ -566,8 +546,41 @@ function pruneRadarFrameCache() {
 function animateRadar() {
   if (!radarPlaying) return;
   showRadarFrame(radarFrameIndex);
+  radarProgressFrameIndex = radarFrameIndex;
+  radarProgressFrameStart = performance.now();
   radarFrameIndex = (radarFrameIndex + 1) % radarFrames.length;
   radarAnimTimer = setTimeout(animateRadar, RADAR_FRAME_MS / radarSpeedMultiplier);
+}
+
+// Drives the progress bar at a constant rate via elapsed-time math, decoupled
+// from actual frame paint completion (network latency would otherwise make
+// it advance in uneven jumps): each rAF tick computes how far through the
+// current frame's interval we are — (elapsed / frameDuration), clamped to
+// [0,1] — and adds that fraction to the frame index already shown, so the
+// bar sweeps continuously from one frame's position to the next instead of
+// snapping in RADAR_FRAME_MS-sized steps.
+function tickRadarProgress() {
+  const progressEl = document.getElementById('radar-progress-fill');
+  if (progressEl && radarFrames.length > 0) {
+    const frameDuration = RADAR_FRAME_MS / radarSpeedMultiplier;
+    const elapsed = performance.now() - radarProgressFrameStart;
+    const fraction = Math.min(elapsed / frameDuration, 1);
+    const pct = ((radarProgressFrameIndex + fraction) / radarFrames.length) * 100;
+    progressEl.style.width = `${pct}%`;
+  }
+  radarProgressRAFId = requestAnimationFrame(tickRadarProgress);
+}
+
+function startRadarProgressTicker() {
+  if (radarProgressRAFId != null) return;
+  radarProgressRAFId = requestAnimationFrame(tickRadarProgress);
+}
+
+function stopRadarProgressTicker() {
+  if (radarProgressRAFId != null) {
+    cancelAnimationFrame(radarProgressRAFId);
+    radarProgressRAFId = null;
+  }
 }
 
 // Shows the most recent frame immediately, then starts the oldest→newest
@@ -581,7 +594,10 @@ function startRadarLoop() {
   radarTransitioning = false;
   showRadarFrame(radarFrames.length - 1, () => {
     radarFrameIndex = 0;
-    if (radarPlaying) animateRadar();
+    if (radarPlaying) {
+      animateRadar();
+      startRadarProgressTicker();
+    }
   });
 }
 
@@ -621,11 +637,6 @@ function showRadarFrame(index, onReady) {
     if (tsEl) {
       tsEl.textContent = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     }
-    const progressEl = document.getElementById('radar-progress-fill');
-    if (progressEl) {
-      const pct = radarFrames.length > 1 ? (index / (radarFrames.length - 1)) * 100 : 100;
-      progressEl.style.width = `${pct}%`;
-    }
     setTimeout(() => {
       outgoing.setOpacity(0);
       radarTransitioning = false;
@@ -648,8 +659,13 @@ function toggleRadarPlay() {
   radarPlaying = !radarPlaying;
   const btn = document.getElementById('radar-play-btn');
   if (btn) btn.textContent = radarPlaying ? '⏸' : '▶';
-  if (radarPlaying) animateRadar();
-  else if (radarAnimTimer) clearTimeout(radarAnimTimer);
+  if (radarPlaying) {
+    animateRadar();
+    startRadarProgressTicker();
+  } else {
+    if (radarAnimTimer) clearTimeout(radarAnimTimer);
+    stopRadarProgressTicker();
+  }
 }
 
 function adjustRadarSpeed(direction) {
@@ -807,6 +823,16 @@ function handleAdminKeydown(e) {
   }
 }
 
+/* ── Date/time widget ───────────────────────────────── */
+function updateDateTime() {
+  const el = document.getElementById('datetime-widget');
+  if (!el) return;
+  const now = new Date();
+  const month = now.toLocaleDateString([], { month: 'short' });
+  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  el.textContent = `${month} ${now.getDate()}, ${time}`;
+}
+
 /* ── Periodic refresh ──────────────────────────────── */
 let refreshTimer = null;
 
@@ -852,6 +878,8 @@ async function init() {
 
   initRadar(cfg);
   startRefresh(cfg);
+  updateDateTime();
+  setInterval(updateDateTime, 1000);
   document.addEventListener('keydown', handleAdminKeydown);
 }
 

@@ -28,12 +28,16 @@
       <span class="radar-timestamp" id="radar-timestamp">--:--</span>
     </div>
 
-    <!-- Radar status: hidden while healthy (see .status-ok rule), only
-         appears for stale/failed so failures stay visible per SPEC.md
-         without a "Live" badge cluttering the normal case. -->
-    <div class="panel-status status-ok" id="status-radar">
-      <span class="status-dot"></span>
-      <span class="status-label">Live</span>
+    <!-- Top-left: date/time widget, plus radar status (hidden while
+         healthy — see .status-ok rule — only appears for stale/failed so
+         failures stay visible per SPEC.md without cluttering the normal
+         case). -->
+    <div class="top-left-stack">
+      <div class="datetime-widget" id="datetime-widget">--- --, --:--</div>
+      <div class="panel-status status-ok" id="status-radar">
+        <span class="status-dot"></span>
+        <span class="status-label">Live</span>
+      </div>
     </div>
 
     <!-- Right column: current conditions + hourly -->
@@ -46,7 +50,7 @@
       </div>
       <div class="hourly-section">
         <div class="tile-heading-row">
-          <h2>Next 12 Hours</h2>
+          <h2>Next 6 Hours</h2>
           <div class="panel-status status-ok" id="status-hourly">
             <span class="status-dot"></span>
             <span class="status-label">Live</span>
