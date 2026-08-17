@@ -14,6 +14,8 @@
   --color-ok: #16a34a;
   --color-stale: #d97706;
   --color-fail: #dc2626;
+  --color-high: #e2711d; /* warm/orange tinge for daily high temps */
+  --color-low: #2563eb;  /* cool/blue tinge for daily low temps (matches --color-accent) */
   --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
   /* Tiles float over the full-bleed radar as flat, semi-transparent white
@@ -228,6 +230,15 @@ html, body {
   font-size: var(--font-lg);
 }
 
+/* Sized in em so it scales with whichever badge (hourly or daily,
+   different font-sizes) it's placed in, rather than a fixed px size. */
+.pop-icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.15em;
+  margin-right: 0.15em;
+}
+
 .hourly-pop {
   color: var(--color-accent);
   font-weight: 700;
@@ -287,18 +298,25 @@ html, body {
 }
 
 .daily-temps {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
   font-variant-numeric: tabular-nums;
   font-size: var(--font-md);
   font-weight: 700;
 }
 
 .daily-high {
-  font-weight: 700;
+  color: var(--color-high);
+}
+
+.daily-dash {
+  color: var(--color-text-secondary);
+  font-weight: 400;
 }
 
 .daily-low {
-  color: var(--color-text);
-  font-weight: 400;
+  color: var(--color-low);
 }
 
 .daily-pop {

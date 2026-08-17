@@ -369,7 +369,7 @@ function renderHourlyStrip(periods) {
         <span class="hourly-time">${timeLabel}</span>
         ${iconUrl ? `<img class="hourly-icon" src="${weatherIconUrl(iconUrl)}" alt="${p.shortForecast || ''}" />` : ''}
         <span class="hourly-temp">${p.temperature}°</span>
-        ${pop ? `<span class="hourly-pop">💧${pop}</span>` : ''}
+        ${pop ? `<span class="hourly-pop"><img class="pop-icon" src="icons/rain-heavy.svg" alt="" />${pop}</span>` : ''}
       </div>
     `;
   }).join('');
@@ -394,15 +394,19 @@ function renderDailyStrip(periods) {
     const iconUrl = p.icon || '';
     const popValue = p.probabilityOfPrecipitation?.value;
     const pop = popValue != null ? `${popValue}%` : '';
+    const highStr = p.temperature != null ? `${p.temperature}°` : '—';
+    const lowVal = p.temperature != null ? Math.round(p.temperature - 8) : null;
+    const lowStr = lowVal != null ? `${lowVal}°` : '—';
     return `
       <div class="daily-card">
         <span class="daily-day">${dayName}</span>
         ${iconUrl ? `<img class="daily-icon" src="${weatherIconUrl(iconUrl)}" alt="${p.shortForecast || ''}" />` : ''}
         <span class="daily-temps">
-          <span class="daily-high">${p.temperature}</span>
-          /<span class="daily-low">${p.temperature ? Math.round(p.temperature - 8) : '—'}</span>
+          <span class="daily-high">${highStr}</span>
+          <span class="daily-dash">—</span>
+          <span class="daily-low">${lowStr}</span>
         </span>
-        ${pop ? `<span class="daily-pop">💧${pop}</span>` : ''}
+        ${pop ? `<span class="daily-pop"><img class="pop-icon" src="icons/rain-heavy.svg" alt="" />${pop}</span>` : ''}
       </div>
     `;
   }).join('');
