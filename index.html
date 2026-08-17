@@ -16,12 +16,9 @@
          else floats above it as semi-transparent tiles. -->
     <div id="radar-map"></div>
 
-    <!-- Radar transport controls -->
+    <!-- Radar progress + timestamp (passive display; play/pause and speed
+         controls live in the hidden admin drawer — see "H" key) -->
     <div class="radar-controls">
-      <button id="radar-play-btn" onclick="toggleRadarPlay()">⏸</button>
-      <button id="radar-speed-down-btn" onclick="adjustRadarSpeed(-1)">−</button>
-      <span class="radar-speed-readout" id="radar-speed-readout">1×</span>
-      <button id="radar-speed-up-btn" onclick="adjustRadarSpeed(1)">+</button>
       <div class="radar-progress">
         <div class="radar-progress-fill" id="radar-progress-fill"></div>
       </div>
@@ -43,14 +40,12 @@
     <!-- Right column: current conditions + hourly -->
     <div class="right-column">
       <div class="current-conditions" id="current-conditions">
-        <h2>Current Conditions</h2>
         <div class="condition-row">
           <span class="condition-label">Loading…</span>
         </div>
       </div>
       <div class="hourly-section">
         <div class="tile-heading-row">
-          <h2>Next 6 Hours</h2>
           <div class="panel-status status-ok" id="status-hourly">
             <span class="status-dot"></span>
             <span class="status-label">Live</span>
@@ -60,10 +55,9 @@
       </div>
     </div>
 
-    <!-- 7-day forecast -->
+    <!-- 7-day forecast: each day is its own floating tile -->
     <div class="daily-section">
       <div class="tile-heading-row">
-        <h2>7-Day Forecast</h2>
         <div class="panel-status status-ok" id="status-daily">
           <span class="status-dot"></span>
           <span class="status-label">Live</span>
@@ -107,6 +101,16 @@
       </section>
 
       <section class="admin-section">
+        <h3>Radar Playback</h3>
+        <div class="admin-radar-controls">
+          <button class="admin-btn" id="radar-play-btn" onclick="toggleRadarPlay()">⏸</button>
+          <button class="admin-btn" id="radar-speed-down-btn" onclick="adjustRadarSpeed(-1)">−</button>
+          <span class="radar-speed-readout" id="radar-speed-readout">1×</span>
+          <button class="admin-btn" id="radar-speed-up-btn" onclick="adjustRadarSpeed(1)">+</button>
+        </div>
+      </section>
+
+      <section class="admin-section">
         <h3>Pin Locations</h3>
         <button class="admin-btn" id="admin-pin-toggle-btn" onclick="toggleAdminPinMode()">+ Add Pin</button>
         <p class="admin-pin-hint" id="admin-pin-hint" hidden>Click the map to place a pin…</p>
@@ -115,6 +119,7 @@
     </div>
   </div>
 
+  <script src="icons/weather-icons.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

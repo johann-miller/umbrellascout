@@ -1,0 +1,27 @@
+<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><g transform="translate(-0.25,-2.77) scale(1.0731)">
+  <g transform="translate(6.2,1.4) scale(0.72)"><g fill="#14161a">
+  <rect x="12.75" y="24.75" width="23.5" height="6.5" rx="0"/>
+  <circle cx="14" cy="24" r="7.25"/>
+  <circle cx="25" cy="21" r="10.25"/>
+  <circle cx="35" cy="23.5" r="7.75"/>
+  </g>
+  <g fill="#FFFFFF">
+  <rect x="14" y="26" width="21" height="4" rx="0"/>
+  <circle cx="14" cy="24" r="6"/>
+  <circle cx="25" cy="21" r="9"/>
+  <circle cx="35" cy="23.5" r="6.5"/>
+  </g></g>
+  <g transform="translate(12,26) rotate(20) scale(0.75)"><path d="M0,0 L-1.86,4.77 A2,2 0 1,0 1.86,4.77 Z" fill="#2F8FE0"/></g>
+  <g stroke="#8FD3F4" stroke-width="2" stroke-linecap="round" transform="translate(18,37) scale(1.05)">
+  <line x1="-3" y1="0" x2="3" y2="0"/>
+  <line x1="-1.5" y1="-2.6" x2="1.5" y2="2.6"/>
+  <line x1="-1.5" y1="2.6" x2="1.5" y2="-2.6"/>
+  </g>
+  <g transform="translate(24,26) rotate(20) scale(0.8)"><path d="M0,0 L-1.86,4.77 A2,2 0 1,0 1.86,4.77 Z" fill="#2F8FE0"/></g>
+  <g stroke="#8FD3F4" stroke-width="2" stroke-linecap="round" transform="translate(30,37) scale(1.1)">
+  <line x1="-3" y1="0" x2="3" y2="0"/>
+  <line x1="-1.5" y1="-2.6" x2="1.5" y2="2.6"/>
+  <line x1="-1.5" y1="2.6" x2="1.5" y2="-2.6"/>
+  </g>
+  <g transform="translate(36,26) rotate(20) scale(0.85)"><path d="M0,0 L-1.86,4.77 A2,2 0 1,0 1.86,4.77 Z" fill="#2F8FE0"/></g>
+  </g></svg>

@@ -190,13 +190,20 @@ below (64-bit Lite + X11) is the one reported to be lightest and most reliable, 
 - Accessed at `http://<pi-ip>:8080/admin`
 
 ## Project Layout
-Flat, no build step:
+No build step:
 ```
 index.html
 admin.html
 style.css
 app.js
 admin.js
+icons/
+  *.svg              — flat/bold/vibrant weather icon set (clear-day.svg,
+                        rain-heavy.svg, etc.), one standalone SVG file per
+                        condition, referenced directly via <img src>
+  weather-icons.js    — NWS icon-code → icon filename mapping only
+                        (weatherIconUrl()), loaded via <script> before
+                        app.js; does not contain any icon markup itself
 ```
 Version control: git, single repo.
 

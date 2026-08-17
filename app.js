@@ -190,7 +190,16 @@ const NWS_BASE = 'https://api.weather.gov';
 async function nwsFetch(url, retryCount = 0) {
   const start = performance.now();
   try {
-    const res = await fetch(url);
+    // NWS sets max-age up to 1hr on forecast endpoints, longer than our
+    // ~15min poll interval — a plain fetch() would honor that and silently
+    // serve a stale cached body for the full hour with no error/staleness
+    // signal. 'no-cache' still isn't a cache-buster (no request changes,
+    // no query string) — it just forces revalidation with the server
+    // (conditional GET against Last-Modified) on every poll instead of
+    // trusting the freshness lifetime blindly, so unchanged data still
+    // comes back cheap as a 304, honoring "don't cache-bust" while getting
+    // data as fresh as the server actually has.
+    const res = await fetch(url, { cache: 'no-cache' });
     const elapsed = Math.round(performance.now() - start);
     if (!res.ok) {
       if (res.status === 400) {
@@ -312,9 +321,8 @@ function renderCurrentConditions(props) {
   const windStr = windSpeed != null ? `${degreesToCardinal(windDir)} at ${Math.round(windSpeed)} km/h` : '—';
 
   el.innerHTML = `
-    <h2>Current Conditions</h2>
     <div class="condition-hero">
-      ${iconUrl ? `<img class="condition-icon" src="${iconUrl}" alt="${conditions}" />` : ''}
+      ${iconUrl ? `<img class="condition-icon" src="${weatherIconUrl(iconUrl)}" alt="${conditions}" />` : ''}
       <span class="condition-temp">${tempStr}</span>
     </div>
     <div class="condition-row">
@@ -349,7 +357,7 @@ function renderHourlyStrip(periods) {
     return `
       <div class="hourly-card">
         <span class="hourly-time">${timeLabel}</span>
-        ${iconUrl ? `<img class="hourly-icon" src="${iconUrl}" alt="${p.shortForecast || ''}" />` : ''}
+        ${iconUrl ? `<img class="hourly-icon" src="${weatherIconUrl(iconUrl)}" alt="${p.shortForecast || ''}" />` : ''}
         <span class="hourly-temp">${p.temperature}°</span>
         ${pop ? `<span class="hourly-pop">💧${pop}</span>` : ''}
       </div>
@@ -379,8 +387,7 @@ function renderDailyStrip(periods) {
     return `
       <div class="daily-card">
         <span class="daily-day">${dayName}</span>
-        ${iconUrl ? `<img class="daily-icon" src="${iconUrl}" alt="${p.shortForecast || ''}" />` : ''}
-        <span class="daily-desc" title="${p.shortForecast || ''}">${p.shortForecast || ''}</span>
+        ${iconUrl ? `<img class="daily-icon" src="${weatherIconUrl(iconUrl)}" alt="${p.shortForecast || ''}" />` : ''}
         <span class="daily-temps">
           <span class="daily-high">${p.temperature}</span>
           /<span class="daily-low">${p.temperature ? Math.round(p.temperature - 8) : '—'}</span>
@@ -410,6 +417,11 @@ let radarSpeedMultiplier = RADAR_SPEED_STEPS[radarSpeedIndex];
 let radarBBox = null; // fixed EPSG:3857 bbox + pixel size, capped around the configured location; computed once
 const RADAR_FRAME_MS = 350;
 const RADAR_OVERLAP_MS = 50; // how long incoming/outgoing frames stay stacked before outgoing is hidden
+// Precip-free areas are already transparent PNG pixels (TRANSPARENT=true in
+// the WMS request), so a layer opacity below 1 only lightens the colored
+// reflectivity blobs themselves, letting the basemap streets/labels show
+// through underneath the storm cells rather than fully obscuring them.
+const RADAR_LAYER_OPACITY = 0.8;
 const WMS_TIME_URL = 'https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi';
 
 /* Requests are capped to a fixed extent around the configured location,
@@ -508,7 +520,7 @@ function initRadar(cfg) {
   // one. Once loaded it's revealed instantly and held stacked over the
   // outgoing frame briefly before the outgoing one is hidden, so there's
   // never a gap with neither painted.
-  radarLayerA = L.imageOverlay('', bounds, { opacity: 1, interactive: false }).addTo(radarMap);
+  radarLayerA = L.imageOverlay('', bounds, { opacity: RADAR_LAYER_OPACITY, interactive: false }).addTo(radarMap);
   radarLayerB = L.imageOverlay('', bounds, { opacity: 0, interactive: false }).addTo(radarMap);
   radarActiveLayer = radarLayerA;
 
@@ -630,7 +642,7 @@ function showRadarFrame(index, onReady) {
     // still-visible outgoing one, then hold both stacked briefly before
     // dropping the outgoing frame — no opacity animation on either edge,
     // just a short overlap so there's never a gap with neither painted.
-    incoming.setOpacity(1);
+    incoming.setOpacity(RADAR_LAYER_OPACITY);
     radarActiveLayer = incoming;
     updatePanelStatus('radar', true);
     const tsEl = document.getElementById('radar-timestamp');

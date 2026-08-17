@@ -1,0 +1,19 @@
+<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><g transform="translate(-2.77,-3.8) scale(1.1847)">
+  <g transform="translate(6.2,1.4) scale(0.72)"><g fill="#14161a">
+  <rect x="12.75" y="24.75" width="23.5" height="6.5" rx="0"/>
+  <circle cx="14" cy="24" r="7.25"/>
+  <circle cx="25" cy="21" r="10.25"/>
+  <circle cx="35" cy="23.5" r="7.75"/>
+  </g>
+  <g fill="#FFFFFF">
+  <rect x="14" y="26" width="21" height="4" rx="0"/>
+  <circle cx="14" cy="24" r="6"/>
+  <circle cx="25" cy="21" r="9"/>
+  <circle cx="35" cy="23.5" r="6.5"/>
+  </g></g>
+  <g transform="translate(12,26) rotate(20) scale(0.75)"><path d="M0,0 L-1.86,4.77 A2,2 0 1,0 1.86,4.77 Z" fill="#2F8FE0"/></g>
+  <g transform="translate(18,29) rotate(20) scale(1.05)"><path d="M0,0 L-1.86,4.77 A2,2 0 1,0 1.86,4.77 Z" fill="#2F8FE0"/></g>
+  <g transform="translate(24,26) rotate(20) scale(0.8)"><path d="M0,0 L-1.86,4.77 A2,2 0 1,0 1.86,4.77 Z" fill="#2F8FE0"/></g>
+  <g transform="translate(30,29) rotate(20) scale(1.1)"><path d="M0,0 L-1.86,4.77 A2,2 0 1,0 1.86,4.77 Z" fill="#2F8FE0"/></g>
+  <g transform="translate(36,26) rotate(20) scale(0.85)"><path d="M0,0 L-1.86,4.77 A2,2 0 1,0 1.86,4.77 Z" fill="#2F8FE0"/></g>
+  </g></svg>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Icon Preview</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 2rem;
+      background: #eef1f4;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #0b0c0f;
+    }
+    h1 {
+      margin: 0 0 1.5rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 1rem;
+    }
+    .cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid #d0d0d0;
+      border-radius: 8px;
+    }
+    .cell svg {
+      width: 64px;
+      height: 64px;
+    }
+    .cell span {
+      font-size: 0.8rem;
+      color: #454851;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Weather Icon Set — icons/weather-icons.js</h1>
+  <div class="grid" id="icon-grid"></div>
+
+  <script src="icons/weather-icons.js"></script>
+  <script>
+    document.getElementById('icon-grid').innerHTML = Object.entries(WEATHER_ICONS).map(([name, svg]) => `
+      <div class="cell">
+        ${svg}
+        <span>${name}</span>
+      </div>
+    `).join('');
+  </script>
+</body>
+</html>

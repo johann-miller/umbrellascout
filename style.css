@@ -8,7 +8,7 @@
   --color-bg: #eef1f4;
   --color-surface: #ffffff; /* used by admin.html's embedded styles */
   --color-text: #0b0c0f;
-  --color-text-secondary: #454851;
+  --color-text-secondary: #202124;
   --color-border: rgba(11, 12, 15, 0.1);
   --color-accent: #2563eb;
   --color-ok: #16a34a;
@@ -30,7 +30,7 @@
   --tile-margin: 2.2vh;
   --tile-gap: 1.6vh;
   --daily-h: 21vh;
-  --right-col-w: 30vw;
+  --right-col-w: 24vw;
   --credits-h: 1.7vh; /* very short strip, flush with the bottom edge */
 }
 
@@ -70,22 +70,15 @@ html, body {
   box-shadow: var(--tile-shadow);
 }
 
+/* No heading text in any tile — the content is self-explanatory. This
+   row now only ever holds a status badge, hidden unless something's
+   actually stale/failed, so it collapses to nothing in the common case. */
 .tile-heading-row {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1vw;
-  padding: 1.8vh 1.8vw 0.6vh;
-}
-
-.tile-heading-row h2,
-.current-conditions h2 {
-  font-size: clamp(13px, 1.3vh, 19px);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-secondary);
-  font-weight: 700;
+  justify-content: flex-end;
+  padding: 1vh 1.8vw 0;
 }
 
 /* ── Top-left: date/time widget + radar status badge ────── */
@@ -131,10 +124,6 @@ html, body {
   padding: 2.2vh 1.8vw;
 }
 
-.current-conditions h2 {
-  margin-bottom: 1.4vh;
-}
-
 .condition-row {
   display: flex;
   justify-content: space-between;
@@ -144,7 +133,7 @@ html, body {
 }
 
 .condition-label {
-  color: var(--color-text-secondary);
+  color: var(--color-text);
 }
 
 .condition-value {
@@ -192,7 +181,7 @@ html, body {
 }
 
 .hourly-card {
-  flex: 0 0 auto;
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 1vw;
@@ -206,7 +195,7 @@ html, body {
 }
 
 .hourly-time {
-  color: var(--color-text-secondary);
+  color: var(--color-text);
   width: 4em;
   flex: 0 0 auto;
 }
@@ -233,7 +222,7 @@ html, body {
   text-align: right;
 }
 
-/* ── 7-day forecast ─────────────────────────────────── */
+/* ── 7-day forecast (single tile, columns divided by border) ─── */
 .daily-section {
   position: fixed;
   left: var(--tile-margin);
@@ -248,7 +237,6 @@ html, body {
 .daily-strip {
   flex: 1;
   display: flex;
-  justify-content: space-between;
   overflow: hidden;
   min-height: 0;
   padding: 0 1.8vw 1.6vh;
@@ -274,23 +262,13 @@ html, body {
 
 .daily-day {
   font-weight: 700;
-  font-size: clamp(15px, 1.7vh, 24px);
+  font-size: clamp(20px, 2.4vh, 32px);
 }
 
 .daily-icon {
   width: clamp(38px, 4.4vh, 68px);
   height: clamp(38px, 4.4vh, 68px);
   object-fit: contain;
-}
-
-.daily-desc {
-  font-size: clamp(11px, 1.1vh, 15px);
-  color: var(--color-text-secondary);
-  line-height: 1.2;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .daily-temps {
@@ -304,7 +282,7 @@ html, body {
 }
 
 .daily-low {
-  color: var(--color-text-secondary);
+  color: var(--color-text);
   font-weight: 400;
 }
 
@@ -328,13 +306,13 @@ html, body {
   gap: 1vw;
   padding: 0 1.6vw;
   font-size: clamp(9px, 0.75vh, 12px);
-  color: var(--color-text-secondary);
+  color: var(--color-text);
   background: var(--tile-bg);
   box-shadow: 0 -6px 18px rgba(15, 23, 42, 0.12);
 }
 
 .attribution a {
-  color: var(--color-text-secondary);
+  color: var(--color-text);
 }
 
 /* ── Radar transport controls ───────────────────────── */
@@ -351,17 +329,6 @@ html, body {
   padding: 0 1.8vw;
   font-size: clamp(14px, 1.4vh, 20px);
   font-variant-numeric: tabular-nums;
-}
-
-.radar-controls button {
-  flex: 0 0 auto;
-  background: none;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 0.6vh 1vw;
-  cursor: pointer;
-  font-size: inherit;
-  color: var(--color-text);
 }
 
 .radar-speed-readout {
@@ -548,6 +515,16 @@ html, body {
 .admin-btn.active {
   background: var(--color-accent);
   border-color: var(--color-accent);
+}
+
+.admin-radar-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6vw;
+}
+
+.admin-radar-controls .admin-btn {
+  margin-top: 0;
 }
 
 .admin-pin-hint {
