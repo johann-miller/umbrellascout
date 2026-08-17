@@ -342,7 +342,17 @@ async function fetchHourlyForecast(cfg) {
   if (!grid) return;
   const data = await nwsFetch(`${NWS_BASE}/gridpoints/${grid.wfo}/${grid.x},${grid.y}/forecast/hourly?units=si`);
   if (!data || !data.properties || !data.properties.periods) return;
-  const periods = data.properties.periods.slice(0, 6);
+  // Select by actual wall-clock time rather than trusting array position
+  // 0-5 to be "now" — NWS returns ~6.5 days of hourly periods in one
+  // response, so even a cached response that's an hour or more stale
+  // still contains the correct current window, just not at the front
+  // anymore. startTime > now (not endTime > now) skips the
+  // currently-in-progress hour — that's already covered by Current
+  // Conditions — so this shows the next 6 upcoming hours instead.
+  const now = Date.now();
+  const periods = data.properties.periods
+    .filter(p => new Date(p.startTime).getTime() > now)
+    .slice(0, 6);
   await fadeUpdate('hourly', () => renderHourlyStrip(periods));
 }
 

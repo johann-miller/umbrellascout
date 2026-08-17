@@ -32,13 +32,26 @@
   --daily-h: 21vh;
   --right-col-w: 24vw;
   --credits-h: 1.7vh; /* very short strip, flush with the bottom edge */
+
+  /* Typographic scale — every dashboard font-size (outside the admin
+     drawer, which is a separate up-close operator UI, not the TV
+     surface) pulls from one of these instead of a one-off clamp().
+     "Make X bigger" becomes a token swap instead of a new magic number,
+     and every size stays vh-based for TV-safe scaling. */
+  --font-2xs: clamp(9px, 0.8vh, 12px);    /* credits strip */
+  --font-xs: clamp(11px, 1.1vh, 15px);    /* status badges, daily card base */
+  --font-sm: clamp(14px, 1.5vh, 20px);    /* hourly card base, radar controls, daily pop */
+  --font-md: clamp(17px, 2vh, 27px);      /* condition rows, hourly time/pop, daily temps */
+  --font-lg: clamp(22px, 2.8vh, 36px);    /* hourly temp, daily day, datetime widget */
+  --font-xl: clamp(28px, 3.6vh, 44px);    /* reserved for future section-level numbers */
+  --font-hero: clamp(64px, 10vh, 150px);  /* the one true hero: current temp */
 }
 
 html, body {
   height: 100%;
   overflow: hidden;
   font-family: var(--font-stack);
-  font-size: clamp(15px, 1.5vh, 22px);
+  font-size: var(--font-sm);
   background: var(--color-bg);
   color: var(--color-text);
 }
@@ -99,7 +112,7 @@ html, body {
   border-radius: var(--tile-radius);
   box-shadow: var(--tile-shadow);
   padding: 1vh 1.4vw;
-  font-size: clamp(20px, 2.6vh, 36px);
+  font-size: var(--font-lg);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -129,7 +142,7 @@ html, body {
   justify-content: space-between;
   align-items: baseline;
   padding: 0.6vh 0;
-  font-size: clamp(16px, 2vh, 29px);
+  font-size: var(--font-md);
 }
 
 .condition-label {
@@ -156,7 +169,7 @@ html, body {
 }
 
 .condition-temp {
-  font-size: clamp(64px, 10vh, 150px);
+  font-size: var(--font-hero);
   font-weight: 800;
   line-height: 1;
 }
@@ -184,10 +197,11 @@ html, body {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 1vw;
+  justify-content: space-between;
+  gap: 0.5vw;
   padding: 0.9vh 0.2vw;
   border-bottom: 1px solid var(--color-border);
-  font-size: clamp(14px, 1.5vh, 20px);
+  font-size: var(--font-sm);
 }
 
 .hourly-card:last-child {
@@ -198,6 +212,7 @@ html, body {
   color: var(--color-text);
   width: 4em;
   flex: 0 0 auto;
+  font-size: var(--font-md);
 }
 
 .hourly-icon {
@@ -210,8 +225,7 @@ html, body {
 .hourly-temp {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  flex: 1;
-  text-align: right;
+  font-size: var(--font-lg);
 }
 
 .hourly-pop {
@@ -220,6 +234,7 @@ html, body {
   width: 3.4em;
   flex: 0 0 auto;
   text-align: right;
+  font-size: var(--font-md);
 }
 
 /* ── 7-day forecast (single tile, columns divided by border) ─── */
@@ -251,7 +266,7 @@ html, body {
   gap: 0.5vh;
   padding: 0.5vh 0.6vw;
   border-right: 1px solid var(--color-border);
-  font-size: clamp(13px, 1.3vh, 19px);
+  font-size: var(--font-xs);
   text-align: center;
   min-height: 0;
 }
@@ -262,7 +277,7 @@ html, body {
 
 .daily-day {
   font-weight: 700;
-  font-size: clamp(20px, 2.4vh, 32px);
+  font-size: var(--font-lg);
 }
 
 .daily-icon {
@@ -273,7 +288,7 @@ html, body {
 
 .daily-temps {
   font-variant-numeric: tabular-nums;
-  font-size: clamp(14px, 1.6vh, 22px);
+  font-size: var(--font-md);
   font-weight: 700;
 }
 
@@ -289,7 +304,7 @@ html, body {
 .daily-pop {
   color: var(--color-accent);
   font-weight: 700;
-  font-size: clamp(11px, 1.1vh, 15px);
+  font-size: var(--font-sm);
 }
 
 /* ── Attribution (very short strip, flush with the bottom edge) ── */
@@ -305,7 +320,7 @@ html, body {
   justify-content: center;
   gap: 1vw;
   padding: 0 1.6vw;
-  font-size: clamp(9px, 0.75vh, 12px);
+  font-size: var(--font-2xs);
   color: var(--color-text);
   background: var(--tile-bg);
   box-shadow: 0 -6px 18px rgba(15, 23, 42, 0.12);
@@ -327,7 +342,7 @@ html, body {
   align-items: center;
   gap: 1vw;
   padding: 0 1.8vw;
-  font-size: clamp(14px, 1.4vh, 20px);
+  font-size: var(--font-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -368,7 +383,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 0.5vw;
-  font-size: clamp(11px, 1vh, 15px);
+  font-size: var(--font-xs);
   font-weight: 600;
   padding: 0.8vh 1.2vw;
 }
