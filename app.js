@@ -414,9 +414,7 @@ function renderDailyStrip(periods) {
 
 /* ── Radar ─────────────────────────────────────────── */
 let radarMap = null;
-let radarLayerA = null;
-let radarLayerB = null;
-let radarActiveLayer = null; // whichever of A/B is currently opacity:1
+let radarActiveLayer = null; // id of whichever of the two sources/layers is currently at opacity:1
 let radarTransitioning = false;
 let radarPlaying = true;
 let radarFrames = [];
@@ -429,6 +427,7 @@ const RADAR_SPEED_STEPS = [0.25, 0.5, 1, 2, 4, 8];
 let radarSpeedIndex = RADAR_SPEED_STEPS.indexOf(1);
 let radarSpeedMultiplier = RADAR_SPEED_STEPS[radarSpeedIndex];
 let radarBBox = null; // fixed EPSG:3857 bbox + pixel size, capped around the configured location; computed once
+let radarImgCoords = null; // same bbox as 4 [lon,lat] corners [TL, TR, BR, BL] for the image sources
 const RADAR_FRAME_MS = 350;
 const RADAR_OVERLAP_MS = 50; // how long incoming/outgoing frames stay stacked before outgoing is hidden
 // Precip-free areas are already transparent PNG pixels (TRANSPARENT=true in
@@ -437,6 +436,31 @@ const RADAR_OVERLAP_MS = 50; // how long incoming/outgoing frames stay stacked b
 // through underneath the storm cells rather than fully obscuring them.
 const RADAR_LAYER_OPACITY = 0.8;
 const WMS_TIME_URL = 'https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi';
+
+/* CARTO basemap key. Create it at https://carto.com/basemaps/apikey with the
+   GitHub Pages domain allow-listed, then paste it here — it lives in client
+   JS by design (a domain-restricted basemap key, not a secret). It's
+   forwarded to every basemap request via transformRequest below, not just
+   the style fetch, because the served style.json doesn't spread the style
+   URL's query string into its tiles/sprite/glyphs URLs. */
+const CARTO_STYLE_KEY = 'cb1_2cma_1_2a9d5fdb0acf33afa94c42ac';
+const CARTO_VECTOR_STYLE_URL = `https://basemaps.cartocdn.com/gl/positron-gl-style/style.json?key=${CARTO_STYLE_KEY}`;
+
+// Transparent 1×1 PNG; seeds the two radar image sources so MapLibre's
+// ImageSource has a valid url to load before the first real frame arrives.
+const TRANSPARENT_PIXEL_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
+
+// Web-Mercator (EPSG:3857) math replacing Leaflet's L.CRS.EPSG3857.
+const WEB_MERC_R = 6378137;
+const WEB_MERC_HALF = 20037508.34; // π × R, half the world extent in meters
+
+function lonToMercX(lon) { return (lon * WEB_MERC_HALF) / 180; }
+function latToMercY(lat) {
+  const rad = (lat * Math.PI) / 180;
+  return WEB_MERC_R * Math.log(Math.tan(Math.PI / 4 + rad / 2));
+}
+function mercXToLon(x) { return (x / WEB_MERC_HALF) * 180; }
+function mercYToLat(y) { return (Math.atan(Math.sinh(y / WEB_MERC_R)) * 180) / Math.PI; }
 
 /* Requests are capped to a fixed extent around the configured location,
    independent of whatever zoom the admin display happens to use — this
@@ -457,15 +481,26 @@ const RADAR_IMAGE_PX = 1024; // fixed request resolution for that fixed extent (
 let radarFrameCache = new Map();
 
 function computeRadarBBox(cfg) {
-  const center = L.CRS.EPSG3857.project(L.latLng(cfg.lat, cfg.lon));
+  const cx = lonToMercX(cfg.lon);
+  const cy = latToMercY(cfg.lat);
+  const half = RADAR_HALF_EXTENT_M;
+  const xmin = cx - half;
+  const xmax = cx + half;
+  const ymin = cy - half;
+  const ymax = cy + half;
   radarBBox = {
-    xmin: center.x - RADAR_HALF_EXTENT_M,
-    ymin: center.y - RADAR_HALF_EXTENT_M,
-    xmax: center.x + RADAR_HALF_EXTENT_M,
-    ymax: center.y + RADAR_HALF_EXTENT_M,
+    xmin, ymin, xmax, ymax,
     widthPx: RADAR_IMAGE_PX,
     heightPx: RADAR_IMAGE_PX,
   };
+  // Image-source corners start at the top-left of the image and proceed
+  // clockwise: [TL, TR, BR, BL].
+  radarImgCoords = [
+    [mercXToLon(xmin), mercYToLat(ymax)],
+    [mercXToLon(xmax), mercYToLat(ymax)],
+    [mercXToLon(xmax), mercYToLat(ymin)],
+    [mercXToLon(xmin), mercYToLat(ymin)],
+  ];
 }
 
 function radarFrameUrl(ts) {
@@ -505,45 +540,71 @@ function fetchRadarFrameBlob(ts) {
 }
 
 function initRadar(cfg) {
-  radarMap = L.map('radar-map', {
-    zoomControl: false,
+  radarMap = new maplibregl.Map({
+    container: 'radar-map',
+    style: CARTO_VECTOR_STYLE_URL,
+    center: [cfg.lon, cfg.lat],
+    zoom: cfg.zoom,
     attributionControl: false,
-    dragging: true,
-    scrollWheelZoom: true,
+    dragPan: true,
+    scrollZoom: true,
     doubleClickZoom: false,
-    fadeAnimation: false,
-  }).setView([cfg.lat, cfg.lon], cfg.zoom);
+    // Keep the old Leaflet feel: pan/scroll-zoom only, no rotation or tilt.
+    dragRotate: false,
+    touchPitch: false,
+    pitchWithRotate: false,
+    // CARTO keys the vector basemap via `?key=` — on the style URL *and* on
+    // the .mvt/sprite/glyphs requests it spawns, which the served style.json
+    // does not carry the query string into. Forward the key to every
+    // request meant for their CDN.
+    transformRequest: (url) => {
+      if (/basemaps\.cartocdn\.com|tiles\.basemaps\.cartocdn\.com/.test(url)) {
+        const u = new URL(url);
+        if (!u.searchParams.has('key')) u.searchParams.set('key', CARTO_STYLE_KEY);
+        return { url: u.toString() };
+      }
+      return undefined;
+    },
+  });
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19,
-  }).addTo(radarMap);
+  radarMap.once('load', () => {
+    // Bbox is computed once, capped to a fixed extent around the configured
+    // location (not the panel's view/zoom — see RADAR_HALF_EXTENT_M above),
+    // and reused for every frame. The image sources are geo-referenced to
+    // that same fixed area, so any part of the panel outside it just shows
+    // plain basemap.
+    computeRadarBBox(cfg);
 
-  // Bbox is computed once, capped to a fixed extent around the configured
-  // location (not the panel's view/zoom — see RADAR_HALF_EXTENT_M above),
-  // and reused for every frame. Unproject it back to lat/lon so the image
-  // overlay is geo-referenced to the same fixed area it was requested for;
-  // any part of the panel outside that area just shows plain basemap.
-  computeRadarBBox(cfg);
-  const bounds = L.latLngBounds(
-    L.CRS.EPSG3857.unproject(L.point(radarBBox.xmin, radarBBox.ymin)),
-    L.CRS.EPSG3857.unproject(L.point(radarBBox.xmax, radarBBox.ymax))
-  );
+    // Two overlapping raster image sources, both covering the same fixed
+    // bbox: the incoming frame loads fully hidden (opacity 0) on top of the
+    // visible one. Once loaded it's revealed instantly and held stacked over
+    // the outgoing frame briefly before the outgoing one is hidden, so
+    // there's never a gap with neither painted. `raster-fade-duration: 0`
+    // keeps MapLibre from cross-fading on the URL swap, which would fight
+    // the manual opacity control.
+    radarMap.addSource('radarA', { type: 'image', url: TRANSPARENT_PIXEL_DATA_URI, coordinates: radarImgCoords });
+    radarMap.addLayer({
+      id: 'radarALayer',
+      type: 'raster',
+      source: 'radarA',
+      paint: { 'raster-opacity': RADAR_LAYER_OPACITY, 'raster-fade-duration': 0 },
+    });
+    radarMap.addSource('radarB', { type: 'image', url: TRANSPARENT_PIXEL_DATA_URI, coordinates: radarImgCoords });
+    radarMap.addLayer({
+      id: 'radarBLayer',
+      type: 'raster',
+      source: 'radarB',
+      paint: { 'raster-opacity': 0, 'raster-fade-duration': 0 },
+    });
+    radarActiveLayer = 'radarA';
 
-  // Two overlapping image overlays, both covering the same fixed bounds:
-  // the incoming frame loads fully hidden (opacity 0) on top of the visible
-  // one. Once loaded it's revealed instantly and held stacked over the
-  // outgoing frame briefly before the outgoing one is hidden, so there's
-  // never a gap with neither painted.
-  radarLayerA = L.imageOverlay('', bounds, { opacity: RADAR_LAYER_OPACITY, interactive: false }).addTo(radarMap);
-  radarLayerB = L.imageOverlay('', bounds, { opacity: 0, interactive: false }).addTo(radarMap);
-  radarActiveLayer = radarLayerA;
+    radarMap.on('click', handleAdminMapClick);
+    loadAdminPins();
+    renderAdminPinsOnMap();
 
-  buildRadarFrames();
-  startRadarLoop();
-
-  radarMap.on('click', handleAdminMapClick);
-  loadAdminPins();
-  renderAdminPinsOnMap();
+    buildRadarFrames();
+    startRadarLoop();
+  });
 }
 
 function buildRadarFrames() {
@@ -629,6 +690,41 @@ function startRadarLoop() {
 
 let lastRadarTimestamp = null;
 
+// Decode the fetched blob into an <img> ourselves before handing its URL to
+// the ImageSource, so a corrupt/non-image response surfaces as a rejection
+// here — keeping the last-good frame, per SPEC.md — instead of a silent
+// source-level paint failure.
+function predecodeRadarFrame(objUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('radar frame decode failed'));
+    img.src = objUrl;
+  });
+}
+
+// The ImageSource only signals a successful decode+paint via sourcedata
+// events with sourceDataType 'metadata'/'idle'; a failed image source stays
+// silent (its ErrorEvent is the only signal), so gate the reveal on those
+// events and fall back to a timeout so the animation loop can never wedge on
+// a slow frame — mirroring the original Leaflet load/error handling.
+function waitForRadarSource(sourceId) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => {
+      radarMap.off('sourcedata', onData);
+      resolve();
+    }, 5000);
+    function onData(e) {
+      if (e.sourceId === sourceId && (e.sourceDataType === 'metadata' || e.sourceDataType === 'idle')) {
+        clearTimeout(timer);
+        radarMap.off('sourcedata', onData);
+        resolve();
+      }
+    }
+    radarMap.on('sourcedata', onData);
+  });
+}
+
 function showRadarFrame(index, onReady) {
   const ts = radarFrames[index];
   if (!ts || ts === lastRadarTimestamp || radarTransitioning) {
@@ -638,43 +734,33 @@ function showRadarFrame(index, onReady) {
   radarTransitioning = true;
   lastRadarTimestamp = ts;
 
-  const incoming = radarActiveLayer === radarLayerA ? radarLayerB : radarLayerA;
+  const incoming = radarActiveLayer === 'radarA' ? 'radarB' : 'radarA';
   const outgoing = radarActiveLayer;
 
-  incoming.off('load');
-  incoming.off('error');
-  incoming.once('error', () => {
-    // Leave the incoming layer hidden and keep showing the outgoing
-    // (last-good) frame — per SPEC.md, a failure falls back to the last
-    // successfully cached value rather than replacing it with a blank one.
-    radarTransitioning = false;
-    updatePanelStatus('radar', false, 'IEM frame error');
-    onReady?.();
-  });
-  incoming.once('load', () => {
-    // Reveal the fully-painted incoming frame instantly, on top of the
-    // still-visible outgoing one, then hold both stacked briefly before
-    // dropping the outgoing frame — no opacity animation on either edge,
-    // just a short overlap so there's never a gap with neither painted.
-    incoming.setOpacity(RADAR_LAYER_OPACITY);
-    radarActiveLayer = incoming;
-    updatePanelStatus('radar', true);
-    const tsEl = document.getElementById('radar-timestamp');
-    if (tsEl) {
-      tsEl.textContent = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-    }
-    setTimeout(() => {
-      outgoing.setOpacity(0);
-      radarTransitioning = false;
-      onReady?.();
-    }, RADAR_OVERLAP_MS);
-  });
-
   fetchRadarFrameBlob(ts)
-    .then(objUrl => incoming.setUrl(objUrl))
+    .then(objUrl => predecodeRadarFrame(objUrl).then(() => {
+      radarMap.getSource(incoming).updateImage({ url: objUrl, coordinates: radarImgCoords });
+      return waitForRadarSource(incoming);
+    }))
+    .then(() => {
+      // Reveal the fully-painted incoming frame instantly, on top of the
+      // still-visible outgoing one, then hold both stacked briefly before
+      // dropping the outgoing frame — no opacity animation on either edge,
+      // just a short overlap so there's never a gap with neither painted.
+      radarMap.setPaintProperty(`${incoming}Layer`, 'raster-opacity', RADAR_LAYER_OPACITY);
+      radarActiveLayer = incoming;
+      updatePanelStatus('radar', true);
+      const tsEl = document.getElementById('radar-timestamp');
+      if (tsEl) {
+        tsEl.textContent = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      }
+      setTimeout(() => {
+        radarMap.setPaintProperty(`${outgoing}Layer`, 'raster-opacity', 0);
+        radarTransitioning = false;
+        onReady?.();
+      }, RADAR_OVERLAP_MS);
+    })
     .catch(err => {
-      incoming.off('load');
-      incoming.off('error');
       radarTransitioning = false;
       updatePanelStatus('radar', false, err.message || 'IEM frame error');
       onReady?.();
@@ -737,21 +823,26 @@ function saveAdminPins() {
 }
 
 function renderAdminPinsOnMap() {
-  adminPinMarkers.forEach(m => radarMap.removeLayer(m));
+  adminPinMarkers.forEach(m => m.remove());
   adminPinMarkers = adminPins.map(pin => {
-    const marker = L.marker([pin.lat, pin.lon], {
-      icon: L.divIcon({ className: 'admin-pin-icon', iconSize: [14, 14] }),
-      interactive: false,
-    }).addTo(radarMap);
+    // HTML marker element: the rotated teardrop, plus an optional label
+    // span that replaces the old Leaflet permanent tooltip. The whole
+    // wrapper is pointer-events:none (via CSS) so map clicks pass through,
+    // matching Leaflet's interactive:false markers.
+    const wrap = document.createElement('div');
+    wrap.className = 'admin-pin-wrap';
+    const icon = document.createElement('div');
+    icon.className = 'admin-pin-icon';
+    wrap.appendChild(icon);
     if (pin.label) {
-      marker.bindTooltip(pin.label, {
-        permanent: true,
-        direction: 'right',
-        offset: [10, 0],
-        className: 'admin-pin-label',
-      }).openTooltip();
+      const label = document.createElement('span');
+      label.className = 'admin-pin-label';
+      label.textContent = pin.label;
+      wrap.appendChild(label);
     }
-    return marker;
+    return new maplibregl.Marker({ element: wrap, anchor: 'bottom' })
+      .setLngLat([pin.lon, pin.lat])
+      .addTo(radarMap);
   });
 }
 
@@ -788,7 +879,7 @@ function toggleAdminPinMode() {
 function handleAdminMapClick(e) {
   if (!adminPinMode) return;
   const label = (window.prompt('Label for this pin (optional):', '') || '').trim();
-  adminPins.push({ lat: e.latlng.lat, lon: e.latlng.lng, label });
+  adminPins.push({ lat: e.lngLat.lat, lon: e.lngLat.lng, label });
   saveAdminPins();
   renderAdminPinsOnMap();
   renderAdminPinList();

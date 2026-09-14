@@ -446,12 +446,6 @@ html, body {
   transition: opacity 0.3s ease;
 }
 
-/* ── Leaflet overrides ──────────────────────────────── */
-.leaflet-control-zoom,
-.leaflet-control-attribution {
-  display: none !important;
-}
-
 /* ── Hidden admin drawer (toggled by "H"; no visible affordance) ──── */
 .admin-drawer {
   position: fixed;
@@ -594,6 +588,16 @@ html, body {
 }
 
 /* ── Pins on the public-facing map ──────────────────── */
+/* The wrapper is sized to the teardrop; MapLibre anchors its bottom-center
+   (the rotated tip) at the coordinate. pointer-events:none lets map clicks
+   pass through, matching the markers' old interactive:false. */
+.admin-pin-wrap {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
 .admin-pin-icon {
   width: 14px;
   height: 14px;
@@ -604,7 +608,12 @@ html, body {
   transform: rotate(-45deg);
 }
 
-.leaflet-tooltip.admin-pin-label {
+.admin-pin-label {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
   background: var(--tile-bg);
   border: var(--tile-border);
   border-radius: 8px;
